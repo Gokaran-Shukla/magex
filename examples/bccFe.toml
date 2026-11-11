@@ -1,0 +1,23 @@
+# bcc Fe, collinear QE + Wannier90 (s,p,d projections) -- data from github.com/mailhexu/TB2J_examples
+[input]
+win     = "Fe_up.win"          # cell, atoms, projections (Fe:s;p;d)
+hr_up   = "Fe_up_hr.dat"
+hr_dn   = "Fe_down_hr.dat"
+centres = "Fe_up_centres.xyz"  # write_xyz = true
+efermi  = 12.6256              # eV, from the SCF run
+
+[magnetic]
+elements = ["Fe"]
+
+[calc]
+kmesh       = [13, 13, 13]     # also the real-space supercell for J(R)
+temperature = 300              # K, Fermi smearing of the Ozaki pole sum
+partition   = "weighted"       # rotationally invariant (default); "onsite" = TB2J/LKAG
+rcut        = 6.0              # print pairs up to 6 A (all pairs are kept in results.json)
+lloyd_shells = 2               # finite-angle analysis for the first two shells
+bruno       = true
+
+[magnon]
+J = "mft"                      # mft | bruno | downfold
+path = "GHNGP"
+special_points = {G=[0,0,0], H=[-0.5,0.5,0.5], N=[0,0,0.5], P=[0.25,0.25,0.25]}

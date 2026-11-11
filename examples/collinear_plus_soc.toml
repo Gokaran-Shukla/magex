@@ -1,0 +1,24 @@
+# Recommended route for DMI / anisotropic exchange / SIA / MAE from ONE collinear calculation:
+# collinear (ISPIN=2, no SOC) Wannier90 up/dn Hamiltonians + atomic xi L.S added on the Wannier
+# orbitals.  The magnetisation is then rotated to x, y, z inside one Hamiltonian.
+[input]
+win     = "wannier90.up.win"
+hr_up   = "wannier90.up_hr.dat"
+hr_dn   = "wannier90.dn_hr.dat"
+centres = "wannier90.up_centres.xyz"
+efermi  = 0.0
+
+[magnetic]
+elements = ["Cr"]
+ligands  = ["I"]
+
+[soc_xi]                        # eV; fit these to a fully relativistic band structure if possible
+"Cr:d" = 0.035
+"I:p"  = 0.60
+
+[calc]
+kmesh = [9, 9, 1]
+soc   = "atomic"               # auto | none | atomic | input | replace
+refs  = "auto"                 # x, y, z when SOC is present
+mae   = true
+mae_kmesh = [24, 24, 1]

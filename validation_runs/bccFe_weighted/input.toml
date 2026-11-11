@@ -1,0 +1,21 @@
+# Run inside TB2J_examples/Wannier/bccFe_QE_Wannier90/W90/ (see examples/README.md)
+[input]
+win = "Fe_up.win"
+hr_up = "Fe_up_hr.dat"
+hr_dn = "Fe_down_hr.dat"
+centres = "Fe_up_centres.xyz"
+efermi = 12.6256
+
+[magnetic]
+elements = ["Fe"]
+
+[calc]
+kmesh = [13, 13, 13]
+rcut = 6.0
+partition = "weighted"
+lloyd_shells = 2
+outdir = "weighted"
+
+[magnon]
+path = "GHNGP"
+special_points = {G=[0,0,0], H=[-0.5,0.5,0.5], N=[0,0,0.5], P=[0.25,0.25,0.25]}

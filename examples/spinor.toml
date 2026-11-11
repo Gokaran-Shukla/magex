@@ -1,0 +1,20 @@
+# Fully relativistic (spinor) Wannier90 input.  The time-odd (exchange) and time-even (SOC)
+# parts are separated assuming a time-reversal-symmetric (real) Wannier gauge.  Check the
+# "time-reversal check" line of the MAE section: if it is not small, use soc = "replace"
+# (keep the exchange part, swap in atomic SOC) or the collinear+SOC route.
+[input]
+win     = "wannier90.win"
+hr      = "wannier90_hr.dat"
+centres = "wannier90_centres.xyz"
+poscar  = "POSCAR"             # only if the .win has no unit_cell_cart / atoms block
+spinor_order = "interleaved"   # QE and VASP+W90 (orbital-major, spin-minor); or "blocked"
+efermi  = -0.86
+
+[magnetic]
+elements = ["Cr"]
+ligands  = ["I"]
+
+[calc]
+kmesh = [7, 7, 1]
+refs  = "auto"
+mae   = true

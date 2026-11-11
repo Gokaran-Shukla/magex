@@ -1,0 +1,20 @@
+# G-type AFM SrMnO3, collinear VASP + Wannier90 (O:p, Mn:d)
+[input]
+win     = "wannier90.up.win"
+hr_up   = "wannier90.up_hr.dat"
+hr_dn   = "wannier90.dn_hr.dat"
+centres = "wannier90.up_centres.xyz"
+efermi  = 4.327
+
+[magnetic]
+elements = ["Mn"]
+ligands  = ["O"]               # spin-polarised ligands are downfolded (ignored if unpolarised)
+
+[calc]
+kmesh = [7, 7, 7]
+rcut  = 6.0
+lloyd_shells = 2
+
+[magnon]
+path = "GXMGR"
+special_points = {G=[0,0,0], X=[0.5,0,0], M=[0.5,0.5,0], R=[0.5,0.5,0.5]}
