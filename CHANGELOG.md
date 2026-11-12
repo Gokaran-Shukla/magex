@@ -18,6 +18,11 @@
 - two-sublattice micromagnetics (`[afm]`): antiferromagnets, ferrimagnets and d-wave altermagnets
   (sublattice-anisotropic stiffness), homogeneous/inhomogeneous inter-sublattice exchange, demag of
   the total magnetisation, SOT; chirality-resolved spin-wave dispersion; AFM domain-wall velocity example
+- spin-transfer torques: Zhang-Li (current in plane, non-adiabatic beta) and Slonczewski (CPP, MTJ
+  free layers, angle-dependent efficiency); Thiele stage (gyrovector, dissipation tensor, predicted
+  velocity and skyrmion Hall angle); texture tracking in run stages
+- SOT efficiency from spin/orbital Hall conductivities (orbital torque via eta_LS, transparency,
+  finite thickness); spin pumping (Delta alpha, DC spin current, ISHE voltage)
 
 ## 0.2.0 (2026-11-12)
 

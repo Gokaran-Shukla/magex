@@ -1,0 +1,38 @@
+# FMR of a Py/Pt bilayer with spin pumping: damping enhancement, DC spin current and ISHE voltage
+#   magex micromag spin_pumping_fmr.toml
+[mesh]
+n = [8, 8, 1]
+cell_nm = [5.0, 5.0, 5.0]
+pbc = [true, true, false]          # extended film
+
+[[region]]
+material = "Py"
+alpha = 0.008
+
+[field]
+B = [0.1, 0, 0]                    # in-plane bias (T)
+ac = {B = [0, 0.0005, 0], f_GHz = 9.3}    # Kittel f = (gamma/2pi) sqrt(B (B + mu0 Ms)) ~ 9.3 GHz
+
+[spin_pumping]
+g_mix = 2.5e19                     # 1/m^2, Py/Pt real part of the spin-mixing conductance
+theta_SH = 0.08                    # Pt (can be theta_from_conductivities)
+rho = 2.0e-7                       # Ohm m, Pt
+lambda_s_nm = 1.5
+nm_thickness_nm = 6
+length_um = 1000                   # 1 mm strip
+
+[init]
+type = "uniform"
+direction = [1, 0, 0]
+
+[[stage]]
+type = "minimize"
+
+[[stage]]
+type = "run"
+time_ns = 4.0
+record_ps = 5
+title = "FMR with spin pumping"
+
+[output]
+dir = "spin_pumping_out"

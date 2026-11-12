@@ -1,0 +1,41 @@
+# Current-driven skyrmion in a periodic Co/Pt track (Zhang-Li STT): velocity and skyrmion Hall angle,
+# simulation vs Thiele equation
+#   magex micromag skyrmion_racetrack_stt.toml
+[mesh]
+n = [80, 80, 1]
+cell_nm = [1.0, 1.0, 0.6]
+pbc = [true, true, false]
+
+[demag]
+enabled = false            # ultrathin film: use K_eff below
+
+[[region]]
+material = "Co/Pt"
+Ku1 = 6.0e5                # effective anisotropy (Ku - mu0 Ms^2/2)
+alpha = 0.3
+
+[stt]
+type = "zhang-li"
+J = [5e11, 0, 0]           # A/m^2
+P = 0.5
+beta = 0.15                # non-adiabaticity (beta != alpha -> skyrmion Hall effect)
+
+[init]
+type = "skyrmion"
+radius_nm = 8
+
+[[stage]]
+type = "minimize"
+
+[[stage]]
+type = "thiele"
+
+[[stage]]
+type = "run"
+time_ns = 0.3
+record_ps = 10
+track = true
+title = "skyrmion driven by spin-transfer torque"
+
+[output]
+dir = "skyrmion_stt_out"

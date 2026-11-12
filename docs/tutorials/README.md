@@ -25,6 +25,8 @@ own from a model Hamiltonian or a material library.
 | 10 | [Magnon spectra from dynamics](10_magnon_spectra.md) | S(q, ω) from LLG vs LSWT; micromagnetic spin-wave dispersion, DMI non-reciprocity | 1 min |
 | 11 | [Energy barriers and lifetimes](11_energy_barriers.md) | GNEB: skyrmion collapse, MRAM thermal stability Δ, Arrhenius lifetimes | seconds–minutes |
 | 12 | [Antiferro-, ferri- and altermagnets](12_antiferromagnets.md) | two-sublattice micromagnetics, AFMR, chiral magnon splitting, SOT-driven AFM walls | 1–2 min |
+| 13 | [Spin-transfer and spin-orbit torques](13_spin_torques.md) | Zhang–Li, Slonczewski, SOT; skyrmion Hall angle vs Thiele | 1 min |
+| 14 | [First-principles torques and spin pumping](14_first_principles_sot.md) | θ from spin/orbital Hall conductivities, orbital torque, Δα, ISHE voltage | seconds |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

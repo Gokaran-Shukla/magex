@@ -54,6 +54,7 @@ class Micromagnet:
         self.B_func = None                      # optional callable t -> (3,) added to B_ext
         self.B_local = []                       # list of (mask (nx,ny,nz), callable t -> (3,)) local fields
         self.sot = None                         # dict(J, theta, sigma, fl_ratio, thickness)
+        self.stt = None                         # dict(type="zhang-li", J=[..], P, beta) | dict(type="slonczewski", ...)
         self.exchange_scale = {}                # {(r1, r2): factor} inter-region exchange scaling
         self.exchange_axis_scale = np.ones(3)   # anisotropic stiffness A_x, A_y, A_z = A * scale (altermagnets)
         self.use_demag = bool(demag)

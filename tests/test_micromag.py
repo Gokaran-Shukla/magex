@@ -198,3 +198,53 @@ def test_afmr_frequency_and_altermagnet_splitting():
     assert abs(f[pos][np.argmax(P[i, pos])] - fp[i]) < 2 * df
     assert abs(-f[neg][np.argmax(P[i, neg])] - fm[i]) < 2 * df
     assert fp[i] - fm[i] > 5 * df                  # chirality splitting resolved
+
+
+def test_zhang_li_wall_velocity_and_slonczewski_switching():
+    from magex.micromag.solver import RK45
+    from magex.micromag.stt import zhang_li_u
+    mesh = Mesh((300, 1, 1), (1e-9,) * 3)
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=5.8e5, A=1.5e-11, Ku1=8e5, alpha=0.1)
+    m, _, _ = minimize(s, s.init("domain_wall", width_nm=4, phi_deg=90, x0_nm=-80), 1e-6)
+    s.stt = dict(type="zhang-li", J=[1e12, 0, 0], P=0.5, beta=0.1)
+    u = zhang_li_u(s, [1e12, 0, 0], 0.5, 0.1)[0, 0, 0, 0]
+    X = mesh.coords()[0][:, 0, 0]
+
+    def pos(mm):
+        mz = mm[:, 0, 0, 2]
+        i = np.where(np.diff(np.sign(mz)))[0][0]
+        return X[i] - mz[i] * (X[i + 1] - X[i]) / (mz[i + 1] - mz[i])
+    ts, xs = [], []
+    RK45(s).run(m, 0.3e-9, 10e-12, lambda t, mm: (ts.append(t), xs.append(pos(mm))))
+    ts, xs = np.array(ts), np.array(xs)
+    v = np.polyfit(ts[ts > 0.05e-9], xs[ts > 0.05e-9], 1)[0]
+    assert abs(v / u - 1) < 0.03                     # beta = alpha: v = u
+    # Slonczewski: macrospin PMA free layer, polariser +z, start near -z; switches only above J_c
+    from magex.micromag.constants import E_CHARGE, HBAR
+    mesh = Mesh((1, 1, 1), (5e-9, 5e-9, 1e-9))
+    Ms, K, a, P = 1e6, 8e5, 0.02, 0.5
+    BK = 2 * K / Ms
+    Jc = 2 * E_CHARGE * a * Ms * 1e-9 * BK / (HBAR * P / 2 * 1)   # eps(m.p = -1) = P/2 for Lambda = 1
+    for J, flips in ((0.7 * Jc, False), (1.5 * Jc, True)):
+        s = Micromagnet(mesh, demag=False)
+        s.add_region(np.ones(mesh.n, bool), Ms=Ms, A=1e-11, Ku1=K, alpha=a)
+        s.stt = dict(type="slonczewski", J=J, P=P, Lambda=1.0, p=[0, 0, 1], thickness=1e-9)
+        m = s.init("uniform", direction=(0.05, 0, -1))
+        m, _ = RK45(s).run(m, 3e-9, 0.1e-9)
+        assert (m[0, 0, 0, 2] > 0) == flips
+
+
+def test_first_principles_sot_and_spin_pumping():
+    from magex.micromag.fp_torques import (pumped_spin_current, spin_pumping_damping,
+                                           theta_from_conductivities)
+    assert abs(theta_from_conductivities(5e4, sigma_SH=2000) - 0.08) < 1e-12
+    assert theta_from_conductivities(5e4, 2000, nm_thickness_nm=1.0, lambda_s_nm=1.5) < 0.08
+    assert abs(spin_pumping_damping(2.5e19, 8e5, 5e-9) - 9.225e-3) < 1e-5
+    # uniform precession about x at angle th: DC j_s = (hbar/4pi) g w sin^2(th) along x
+    w, th, g = 2 * np.pi * 1e10, 0.1, 1e19
+    t = np.linspace(0, 2e-9, 4001)
+    m = np.stack([np.cos(th) * np.ones_like(t), np.sin(th) * np.cos(w * t), np.sin(th) * np.sin(w * t)], 1)
+    jdc, _ = pumped_spin_current(np.column_stack([t, m]), g)
+    from magex.micromag.constants import HBAR
+    assert abs(jdc[0] / (HBAR / (4 * np.pi) * g * w * np.sin(th) ** 2) - 1) < 1e-3

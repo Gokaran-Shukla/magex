@@ -23,6 +23,10 @@ def llg_rhs(system, m, t, precession=True, thermal=None):
     B = system.effective_field(m, t)
     if system.sot:
         B = B + system.sot_field(m)
+    stt = getattr(system, "stt", None)
+    if stt and stt.get("type") == "slonczewski":
+        from .stt import slonczewski_field
+        B = B + slonczewski_field(system, m, t)
     if thermal is not None:
         B = B + thermal
     a = system.alpha[..., None]
@@ -30,7 +34,11 @@ def llg_rhs(system, m, t, precession=True, thermal=None):
     rhs = a * np.cross(m, mxB)
     if precession:
         rhs = rhs + mxB
-    return -GAMMA_LL / (1 + a * a) * rhs, B
+    out = -GAMMA_LL / (1 + a * a) * rhs
+    if stt and stt.get("type", "zhang-li") == "zhang-li":
+        from .stt import stt_rhs
+        out = out + stt_rhs(system, m, t)
+    return out, B
 
 
 class _Recorder:

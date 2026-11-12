@@ -84,7 +84,25 @@ def build(cfg, base=".", log=print):
         s = dict(cfg["sot"])
         if "thickness_nm" in s:
             s["thickness"] = s.pop("thickness_nm") * 1e-9
+        if isinstance(s.get("theta"), dict):              # theta from spin/orbital Hall conductivities
+            from .fp_torques import resolve_theta
+            s["theta"] = resolve_theta(s["theta"], base)
+            log(f"  SOT efficiency from first-principles conductivities: theta_eff = {s['theta']:.4f}")
         sysm.sot = s
+    if "spin_pumping" in cfg:                  # adds the spin-pumping damping and reports j_s / V_ISHE
+        from .fp_torques import spin_pumping_damping
+        sp = cfg["spin_pumping"]
+        mag = sysm.magnetic
+        t_fm = sp.get("thickness_nm", mesh.n[2] * mesh.d[2] * 1e9) * 1e-9
+        da = spin_pumping_damping(sp["g_mix"], sysm.Ms[mag].mean(), t_fm)
+        sysm.alpha[mag] += da
+        sysm.spin_pumping = dict(sp, delta_alpha=da)
+        log(f"  spin pumping: g_mix = {sp['g_mix']:.3g} m^-2 -> Delta alpha = {da:.4g}")
+    if "stt" in cfg:                       # [stt] type = "zhang-li" (J = [Jx,Jy,Jz], P, beta) | "slonczewski"
+        s = dict(cfg["stt"])
+        if "thickness_nm" in s:
+            s["thickness"] = s.pop("thickness_nm") * 1e-9
+        sysm.stt = s
     return sysm
 
 
@@ -123,6 +141,7 @@ def run_micromag_config(cfg, base=".", log=print):
             m = relax(sysm, m, tol, log=log) if typ == "relax" else minimize(sysm, m, tol, log=log)[0]
         elif typ == "run":
             frames = []
+            track = []
             rec = st.get("record_ps", 5.0) * 1e-12
             mov_every = st.get("movie_ps", None)
             cb = None
@@ -134,8 +153,35 @@ def run_micromag_config(cfg, base=".", log=print):
                     if t >= nxt[0]:
                         frames.append((t, mm.copy()))
                         nxt[0] += step
+            if st.get("track"):
+                from .stt import texture_center
+                cb0 = cb
+
+                def cb(t, mm, cb0=cb0):
+                    track.append([t, *texture_center(sysm, mm)])
+                    if cb0:
+                        cb0(t, mm)
             solver = RK45(sysm, tol=st.get("tol", 1e-5))
             m, table = solver.run(m, st["time_ns"] * 1e-9, rec, cb, log=log)
+            if getattr(sysm, "spin_pumping", None):
+                from .fp_torques import ishe_voltage, pumped_spin_current
+                sp = sysm.spin_pumping
+                jdc, _ = pumped_spin_current(table, sp["g_mix"])
+                info.update(spin_current_dc_J_m2=jdc.tolist())
+                log("    pumped DC spin current j_s = (" + ", ".join(f"{x:.3e}" for x in jdc) + ") J/m^2")
+                if all(k in sp for k in ("theta_SH", "rho", "lambda_s_nm", "nm_thickness_nm", "length_um")):
+                    comp = int(np.argmax(np.abs(jdc)))
+                    V = ishe_voltage(jdc[comp], sp["theta_SH"], sp["rho"], sp["lambda_s_nm"] * 1e-9,
+                                     sp["nm_thickness_nm"] * 1e-9, sp["length_um"] * 1e-6)
+                    info.update(V_ISHE=V)
+                    log(f"    inverse spin Hall voltage {V * 1e6:.3f} uV")
+            if track:
+                tr = np.array(track)
+                np.savetxt(os.path.join(outdir, f"track_{tag}.txt"), tr, header="t_s x_m y_m (texture centre)")
+                sel = tr[:, 0] > tr[0, 0] + 0.2 * (tr[-1, 0] - tr[0, 0])
+                v = [np.polyfit(tr[sel, 0], tr[sel, k], 1)[0] for k in (1, 2)]
+                info.update(velocity_m_s=v, hall_angle_deg=float(np.degrees(np.arctan2(v[1], v[0]))))
+                log(f"    texture velocity ({v[0]:.2f}, {v[1]:.2f}) m/s, angle {info['hall_angle_deg']:.2f} deg")
             write_table(os.path.join(outdir, f"table_{tag}.txt"), table, TABLE_HEADER)
             plot_table(table, os.path.join(outdir, f"table_{tag}.png"), title=st.get("title", f"stage {k}: run"))
             if frames:
@@ -158,6 +204,15 @@ def run_micromag_config(cfg, base=".", log=print):
             an = analytic_film_dispersion(sysm, k, axis) if st.get("analytic", True) else None
             plot_dispersion(k, f, P, os.path.join(outdir, f"dispersion_{tag}.png"), an,
                             st.get("title", "spin-wave dispersion"), st.get("kmax"), st.get("fmax_GHz"))
+        elif typ == "thiele":
+            from .stt import thiele, zhang_li_u
+            stt = sysm.stt or {}
+            beta = float(stt.get("beta", 0.0))
+            u = zhang_li_u(sysm, stt.get("J", [0, 0, 0]), stt.get("P", 0.5), beta)[sysm.magnetic].mean(0)[:2]
+            th = thiele(sysm, m, u, beta=beta)
+            info.update(thiele=th)
+            log(f"    Thiele: Q = {th['Q']:+.3f}, u = {np.round(u, 3).tolist()} m/s -> v = "
+                f"{np.round(th['v'], 3).tolist()} m/s, skyrmion Hall angle {th['hall_angle_deg']:.2f} deg")
         elif typ == "hysteresis":
             snaps = []
             every = max(1, st.get("npts", 41) // 4)
