@@ -47,7 +47,7 @@ INTEGRATORS = ("heun", "rk4", "depondt", "sib", "euler")
 
 class LLGSolver:
     def __init__(self, system, alpha=0.1, dt=1e-3, temperature=0.0, seed=None, precession=True,
-                 thermostat="classical", integrator="heun", stt=None, sot=None):
+                 thermostat="classical", integrator="heun", stt=None, sot=None, backend="auto"):
         """thermostat: "classical" (white Brown noise, Boltzmann statistics) or "quantum"
         (coloured Planck-spectrum noise, Bose statistics of the magnons; see magex.quantum).
 
@@ -86,6 +86,18 @@ class LLGSolver:
             self.sot = (p / np.linalg.norm(p), float(sot.get("B_DL", 0.0)), float(sot.get("B_FL", 0.0)))
         self.field_func = None          # optional callable t -> (3,) or (N,3) extra field (pulses, ac fields)
         self.extra_field = None         # optional callable e -> (N,3) extra field (spin-lattice coupling, ...)
+        # backend: "auto" -> multithreaded numba kernels for heun/depondt when available, else NumPy
+        from . import fast
+        self.fast = None
+        if backend in ("auto", "numba") and fast.available() and integrator in ("heun", "depondt") \
+                and self.stt is None:
+            self.fast = fast.FastModel(system)
+            N = system.N
+            self._buf = {k: np.empty((N, 3)) for k in ("B", "b", "ep", "k1")}
+            self._alpha_arr = np.broadcast_to(self.alpha, (N,)).astype(float).copy()
+            self._streams = fast.seed_streams(seed)
+        elif backend == "numba" and not fast.available():
+            raise RuntimeError("numba is not installed: pip install numba")
 
     @property
     def _a(self):
@@ -137,8 +149,73 @@ class LLGSolver:
                 f[self.sys.pinned] = 0.0
         return f
 
+    # ------------------------------------------------------------------ fast path
+    def _fast_field(self, e, t, out):
+        fm = self.fast
+        extra = None
+        if fm.nonlocal_ or self.sot is not None or self.field_func is not None or self.extra_field is not None:
+            extra = -fm.extra_gradient(e) / (MU_B * self.sys.mu[:, None])
+            if self.sot is not None:
+                p, bdl, bfl = self.sot
+                extra += bdl * np.cross(e, p[None, :]) + bfl * p[None, :]
+            if self.field_func is not None:
+                extra += self.field_func(t)
+            if self.extra_field is not None:
+                extra += self.extra_field(e)
+            extra = np.ascontiguousarray(extra)
+        return fm.field(e, out, extra)
+
+    def _fast_step(self, e):
+        from . import fast
+        bf = self._buf
+        dt, t = self.dt, self.time
+        fm = self.fast
+        extras = fm.nonlocal_ or self.sot is not None or self.field_func is not None or self.extra_field is not None
+        quantum = self.thermostat == "quantum"
+        noisy = self.T > 0 or getattr(self.sys, "site_T", None) is not None
+        if noisy and not quantum:
+            key = (self.T, id(getattr(self.sys, "site_T", None)), dt)
+            if getattr(self, "_sig_key", None) != key:
+                from .structure import site_temperature
+                T = site_temperature(self.sys, self.T)
+                self._sig = np.ascontiguousarray(np.sqrt(2.0 * self._alpha_arr * K_B * np.broadcast_to(T, (self.sys.N,))
+                                                         / (GAMMA * self.sys.mu * MU_B * dt)))
+                self._sig_key = key
+        e = np.array(e, dtype=float, order="C")
+        b = bf["b"]
+        depondt = self.integrator == "depondt"
+        if not extras:
+            if quantum and noisy:
+                b[:] = self.thermal_field()
+            elif not noisy:
+                b[:] = 0.0
+            fast._fused1(e, bf["ep"], bf["k1"], b, self._streams, self._sig if (noisy and not quantum) else bf["B"][:, 0],
+                         self._alpha_arr, dt, self.precession, depondt, noisy and not quantum, *fm.args())
+            fast._fused2(e, bf["ep"], bf["k1"], b, self._alpha_arr, dt, self.precession, depondt, *fm.args())
+            self.time += dt
+            return e
+        if quantum and noisy:
+            b[:] = self.thermal_field()
+        elif noisy:
+            fast._gauss3(b, self._streams, self._sig, fm.pinned)
+        else:
+            b[:] = 0.0
+        B = self._fast_field(e, t, bf["B"])
+        if not depondt:
+            fast._heun_pred(e, B, b, self._alpha_arr, dt, self.precession, bf["ep"], bf["k1"])
+            B = self._fast_field(bf["ep"], t + dt, bf["B"])
+            fast._heun_corr(e, bf["ep"], B, b, self._alpha_arr, dt, self.precession, bf["k1"])
+        else:
+            fast._dep_pred(e, B, b, self._alpha_arr, dt, self.precession, bf["ep"], bf["k1"])
+            B = self._fast_field(bf["ep"], t + dt, bf["B"])
+            fast._dep_corr(e, bf["ep"], B, b, self._alpha_arr, dt, self.precession, bf["k1"])
+        self.time += dt
+        return e
+
     def step(self, e):
         """One integration step; returns new spins."""
+        if self.fast is not None:
+            return self._fast_step(e)
         b = self.thermal_field()
         dt, t = self.dt, self.time
         it = self.integrator

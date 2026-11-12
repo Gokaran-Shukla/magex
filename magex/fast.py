@@ -1,0 +1,523 @@
+"""Multithreaded (numba, prange) kernels for the atomistic spin model.
+
+The 3N x 3N sparse coupling matrix is converted once into a per-site neighbour list with 3x3 blocks,
+so the effective field, a whole Heun / Depondt step and a whole Monte Carlo colour sweep are single
+fused loops over sites (no temporaries, no Python overhead, all cores).  Results are identical to the
+NumPy path to round-off (tests/test_fast.py).
+
+Covered in the kernels: exchange tensors (isotropic + DMI + symmetric anisotropic), single-ion tensors
+(incl. folded Neel surface terms), Zeeman, on-site cubic and higher-order uniaxial terms, pinned spins,
+site temperatures and damping.  Anything else (dipolar, biquadratic, four-spin, quadruplets, torques,
+user fields) is added as an extra field computed by the NumPy code, so every model still runs.
+"""
+from __future__ import annotations
+
+import numpy as np
+
+try:
+    import numba
+    from numba import njit, prange
+    HAVE_NUMBA = True
+except Exception:  # pragma: no cover
+    HAVE_NUMBA = False
+
+MU_B = 5.7883818060e-2
+K_B = 8.617333262e-2
+GAMMA = 0.1760859630
+
+if HAVE_NUMBA:
+    @njit(cache=True)
+    def _seed(s):
+        np.random.seed(s)
+
+    @njit(parallel=True, cache=True)
+    def _seed_threads(seeds):
+        # one draw per thread index seeds the per-thread generators deterministically
+        for k in prange(len(seeds)):
+            np.random.seed(seeds[k])
+
+    @njit(inline="always")
+    def _onsite_grad(i, x, y, z, A, Kc, C, K2, K3, u, has_c, has_u):
+        """dE_onsite/de (meV) for site i at direction (x, y, z)."""
+        gx = 2.0 * (A[i, 0, 0] * x + A[i, 0, 1] * y + A[i, 0, 2] * z)
+        gy = 2.0 * (A[i, 1, 0] * x + A[i, 1, 1] * y + A[i, 1, 2] * z)
+        gz = 2.0 * (A[i, 2, 0] * x + A[i, 2, 1] * y + A[i, 2, 2] * z)
+        if has_c:
+            a1 = C[0, 0] * x + C[0, 1] * y + C[0, 2] * z
+            a2 = C[1, 0] * x + C[1, 1] * y + C[1, 2] * z
+            a3 = C[2, 0] * x + C[2, 1] * y + C[2, 2] * z
+            q1, q2, q3 = a1 * a1, a2 * a2, a3 * a3
+            d1 = 2 * a1 * (q2 + q3) * Kc[i]
+            d2 = 2 * a2 * (q1 + q3) * Kc[i]
+            d3 = 2 * a3 * (q1 + q2) * Kc[i]
+            gx += d1 * C[0, 0] + d2 * C[1, 0] + d3 * C[2, 0]
+            gy += d1 * C[0, 1] + d2 * C[1, 1] + d3 * C[2, 1]
+            gz += d1 * C[0, 2] + d2 * C[1, 2] + d3 * C[2, 2]
+        if has_u:
+            c = x * u[0] + y * u[1] + z * u[2]
+            f = -4.0 * K2[i] * c**3 - 6.0 * K3[i] * c**5
+            gx += f * u[0]
+            gy += f * u[1]
+            gz += f * u[2]
+        return gx, gy, gz
+
+    @njit(inline="always")
+    def _onsite_E(i, x, y, z, A, Kc, C, K2, K3, u, has_c, has_u):
+        E = 0.0
+        v = (x, y, z)
+        for a in range(3):
+            for b in range(3):
+                E += v[a] * A[i, a, b] * v[b]
+        if has_c:
+            a1 = C[0, 0] * x + C[0, 1] * y + C[0, 2] * z
+            a2 = C[1, 0] * x + C[1, 1] * y + C[1, 2] * z
+            a3 = C[2, 0] * x + C[2, 1] * y + C[2, 2] * z
+            q1, q2, q3 = a1 * a1, a2 * a2, a3 * a3
+            E += Kc[i] * (q1 * q2 + q2 * q3 + q3 * q1)
+        if has_u:
+            c = x * u[0] + y * u[1] + z * u[2]
+            E += -K2[i] * c**4 - K3[i] * c**6
+        return E
+
+    @njit(inline="always")
+    def _hfield(i, e, ptr, nbr, Jb):
+        """sum_j J_ij e_j; Jb = (typ, table): neighbour k uses the 3x3 block table[typ[k]]."""
+        typ, T = Jb
+        hx = 0.0
+        hy = 0.0
+        hz = 0.0
+        for k in range(ptr[i], ptr[i + 1]):
+            j = nbr[k]
+            t = typ[k]
+            ex, ey, ez = e[j, 0], e[j, 1], e[j, 2]
+            hx += T[t, 0] * ex + T[t, 1] * ey + T[t, 2] * ez
+            hy += T[t, 3] * ex + T[t, 4] * ey + T[t, 5] * ez
+            hz += T[t, 6] * ex + T[t, 7] * ey + T[t, 8] * ez
+        return hx, hy, hz
+
+    # ------------------------------------------------------------------ fast parallel Gaussian RNG
+    @njit(inline="always")
+    def _next(st, c):
+        x = st[c]
+        x ^= x >> np.uint64(12)
+        x ^= x << np.uint64(25)
+        x ^= x >> np.uint64(27)
+        st[c] = x
+        return x * np.uint64(2685821657736338717)
+
+    @njit(inline="always")
+    def _unif(st, c):
+        return (_next(st, c) >> np.uint64(11)) * (1.0 / 9007199254740992.0)
+
+    @njit(parallel=True, cache=True)
+    def _gauss3(out, st, scale, pinned):
+        """out[i, :] = scale[i] * N(0, 1)^3 (Marsaglia polar, xorshift64* streams in fixed chunks:
+        results do not depend on the number of threads)."""
+        n = out.shape[0]
+        nc = st.size
+        chunk = (n + nc - 1) // nc
+        for c in prange(nc):
+            a = c * chunk
+            b = min(n, a + chunk)
+            spare = 0.0
+            have = False
+            for i in range(a, b):
+                for comp in range(3):
+                    if have:
+                        g = spare
+                        have = False
+                    else:
+                        while True:
+                            u = 2.0 * _unif(st, c) - 1.0
+                            v = 2.0 * _unif(st, c) - 1.0
+                            s2 = u * u + v * v
+                            if 0.0 < s2 < 1.0:
+                                break
+                        f = np.sqrt(-2.0 * np.log(s2) / s2)
+                        g = u * f
+                        spare = v * f
+                        have = True
+                    out[i, comp] = 0.0 if pinned[i] else scale[i] * g
+
+    @njit(parallel=True, cache=True)
+    def _field(e, out, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, pinned, extra, has_extra):
+        N = e.shape[0]
+        for i in prange(N):
+            if pinned[i]:
+                out[i, 0] = 0.0
+                out[i, 1] = 0.0
+                out[i, 2] = 0.0
+                continue
+            hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
+            gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+            inv = 1.0 / (mu[i] * MU_B)
+            out[i, 0] = (2 * hx - gx) * inv + B[0]
+            out[i, 1] = (2 * hy - gy) * inv + B[1]
+            out[i, 2] = (2 * hz - gz) * inv + B[2]
+            if has_extra:
+                out[i, 0] += extra[i, 0]
+                out[i, 1] += extra[i, 1]
+                out[i, 2] += extra[i, 2]
+
+    @njit(inline="always")
+    def _rhs(ex, ey, ez, bx, by, bz, a, prec):
+        cx = ey * bz - ez * by
+        cy = ez * bx - ex * bz
+        cz = ex * by - ey * bx
+        dx = ey * cz - ez * cy
+        dy = ez * cx - ex * cz
+        dz = ex * cy - ey * cx
+        pre = -GAMMA / (1.0 + a * a)
+        if prec:
+            return pre * (cx + a * dx), pre * (cy + a * dy), pre * (cz + a * dz)
+        return pre * a * dx, pre * a * dy, pre * a * dz
+
+    @njit(parallel=True, cache=True)
+    def _noise(b, sig, pinned):
+        for i in prange(b.shape[0]):
+            if pinned[i]:
+                b[i, 0] = 0.0
+                b[i, 1] = 0.0
+                b[i, 2] = 0.0
+            else:
+                b[i, 0] = sig[i] * np.random.standard_normal()
+                b[i, 1] = sig[i] * np.random.standard_normal()
+                b[i, 2] = sig[i] * np.random.standard_normal()
+
+    @njit(parallel=True, cache=True)
+    def _heun_pred(e, Bf, b, alpha, dt, prec, ep, k1):
+        for i in prange(e.shape[0]):
+            fx, fy, fz = _rhs(e[i, 0], e[i, 1], e[i, 2], Bf[i, 0] + b[i, 0], Bf[i, 1] + b[i, 1], Bf[i, 2] + b[i, 2],
+                              alpha[i], prec)
+            k1[i, 0], k1[i, 1], k1[i, 2] = fx, fy, fz
+            x, y, z = e[i, 0] + dt * fx, e[i, 1] + dt * fy, e[i, 2] + dt * fz
+            n = 1.0 / np.sqrt(x * x + y * y + z * z)
+            ep[i, 0], ep[i, 1], ep[i, 2] = x * n, y * n, z * n
+
+    @njit(parallel=True, cache=True)
+    def _heun_corr(e, ep, Bf, b, alpha, dt, prec, k1):
+        for i in prange(e.shape[0]):
+            fx, fy, fz = _rhs(ep[i, 0], ep[i, 1], ep[i, 2], Bf[i, 0] + b[i, 0], Bf[i, 1] + b[i, 1],
+                              Bf[i, 2] + b[i, 2], alpha[i], prec)
+            x = e[i, 0] + 0.5 * dt * (k1[i, 0] + fx)
+            y = e[i, 1] + 0.5 * dt * (k1[i, 1] + fy)
+            z = e[i, 2] + 0.5 * dt * (k1[i, 2] + fz)
+            n = 1.0 / np.sqrt(x * x + y * y + z * z)
+            e[i, 0], e[i, 1], e[i, 2] = x * n, y * n, z * n
+
+    @njit(inline="always")
+    def _rot(x, y, z, wx, wy, wz):
+        th = np.sqrt(wx * wx + wy * wy + wz * wz)
+        if th < 1e-14:
+            return x, y, z
+        kx, ky, kz = wx / th, wy / th, wz / th
+        c, s = np.cos(th), np.sin(th)
+        kd = kx * x + ky * y + kz * z
+        cx = ky * z - kz * y
+        cy = kz * x - kx * z
+        cz = kx * y - ky * x
+        return (x * c + cx * s + kx * kd * (1 - c), y * c + cy * s + ky * kd * (1 - c), z * c + cz * s + kz * kd * (1 - c))
+
+    @njit(inline="always")
+    def _omega(ex, ey, ez, bx, by, bz, a, prec):
+        # de/dt = w x e with w = e x f for the tangent rhs f
+        fx, fy, fz = _rhs(ex, ey, ez, bx, by, bz, a, prec)
+        return ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx
+
+    @njit(parallel=True, cache=True)
+    def _dep_pred(e, Bf, b, alpha, dt, prec, ep, w1):
+        for i in prange(e.shape[0]):
+            wx, wy, wz = _omega(e[i, 0], e[i, 1], e[i, 2], Bf[i, 0] + b[i, 0], Bf[i, 1] + b[i, 1],
+                                Bf[i, 2] + b[i, 2], alpha[i], prec)
+            w1[i, 0], w1[i, 1], w1[i, 2] = wx, wy, wz
+            ep[i, 0], ep[i, 1], ep[i, 2] = _rot(e[i, 0], e[i, 1], e[i, 2], dt * wx, dt * wy, dt * wz)
+
+    @njit(parallel=True, cache=True)
+    def _dep_corr(e, ep, Bf, b, alpha, dt, prec, w1):
+        for i in prange(e.shape[0]):
+            wx, wy, wz = _omega(ep[i, 0], ep[i, 1], ep[i, 2], Bf[i, 0] + b[i, 0], Bf[i, 1] + b[i, 1],
+                                Bf[i, 2] + b[i, 2], alpha[i], prec)
+            x, y, z = _rot(e[i, 0], e[i, 1], e[i, 2], 0.5 * dt * (w1[i, 0] + wx), 0.5 * dt * (w1[i, 1] + wy),
+                           0.5 * dt * (w1[i, 2] + wz))
+            n = 1.0 / np.sqrt(x * x + y * y + z * z)
+            e[i, 0], e[i, 1], e[i, 2] = x * n, y * n, z * n
+
+    # ------------------------------------------------------------------ fused Heun / Depondt (no extra fields)
+    @njit(inline="always")
+    def _bloc(i, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u):
+        hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
+        gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+        inv = 1.0 / (mu[i] * MU_B)
+        return (2 * hx - gx) * inv + B[0], (2 * hy - gy) * inv + B[1], (2 * hz - gz) * inv + B[2]
+
+    @njit(inline="always")
+    def _g(st, c, spare):
+        # spare = [value, flag]
+        if spare[1] > 0.5:
+            spare[1] = 0.0
+            return spare[0]
+        while True:
+            u_ = 2.0 * _unif(st, c) - 1.0
+            v_ = 2.0 * _unif(st, c) - 1.0
+            s2 = u_ * u_ + v_ * v_
+            if 0.0 < s2 < 1.0:
+                break
+        f = np.sqrt(-2.0 * np.log(s2) / s2)
+        spare[0] = v_ * f
+        spare[1] = 1.0
+        return u_ * f
+
+    @njit(parallel=True, cache=True)
+    def _fused1(e, ep, k1, b, st, sig, alpha, dt, prec, depondt, noisy,
+                ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, pinned):
+        n = e.shape[0]
+        nc = st.size
+        chunk = (n + nc - 1) // nc
+        for c in prange(nc):
+            spare = 0.0
+            have = False
+            for i in range(c * chunk, min(n, (c + 1) * chunk)):
+                if pinned[i]:
+                    b[i, 0] = b[i, 1] = b[i, 2] = 0.0
+                    k1[i, 0] = k1[i, 1] = k1[i, 2] = 0.0
+                    ep[i, 0], ep[i, 1], ep[i, 2] = e[i, 0], e[i, 1], e[i, 2]
+                    continue
+                if noisy:
+                    for comp in range(3):
+                        if have:
+                            g = spare
+                            have = False
+                        else:
+                            while True:
+                                u_ = 2.0 * _unif(st, c) - 1.0
+                                v_ = 2.0 * _unif(st, c) - 1.0
+                                s2 = u_ * u_ + v_ * v_
+                                if 0.0 < s2 < 1.0:
+                                    break
+                            f_ = np.sqrt(-2.0 * np.log(s2) / s2)
+                            g = u_ * f_
+                            spare = v_ * f_
+                            have = True
+                        b[i, comp] = sig[i] * g
+                bx, by, bz = _bloc(i, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u)
+                bx += b[i, 0]
+                by += b[i, 1]
+                bz += b[i, 2]
+                if depondt:
+                    wx, wy, wz = _omega(e[i, 0], e[i, 1], e[i, 2], bx, by, bz, alpha[i], prec)
+                    k1[i, 0], k1[i, 1], k1[i, 2] = wx, wy, wz
+                    ep[i, 0], ep[i, 1], ep[i, 2] = _rot(e[i, 0], e[i, 1], e[i, 2], dt * wx, dt * wy, dt * wz)
+                else:
+                    fx, fy, fz = _rhs(e[i, 0], e[i, 1], e[i, 2], bx, by, bz, alpha[i], prec)
+                    k1[i, 0], k1[i, 1], k1[i, 2] = fx, fy, fz
+                    x, y, z = e[i, 0] + dt * fx, e[i, 1] + dt * fy, e[i, 2] + dt * fz
+                    q = 1.0 / np.sqrt(x * x + y * y + z * z)
+                    ep[i, 0], ep[i, 1], ep[i, 2] = x * q, y * q, z * q
+
+    @njit(parallel=True, cache=True)
+    def _fused2(e, ep, k1, b, alpha, dt, prec, depondt,
+                ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, pinned):
+        for i in prange(e.shape[0]):
+            if pinned[i]:
+                continue
+            bx, by, bz = _bloc(i, ep, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u)
+            bx += b[i, 0]
+            by += b[i, 1]
+            bz += b[i, 2]
+            if depondt:
+                wx, wy, wz = _omega(ep[i, 0], ep[i, 1], ep[i, 2], bx, by, bz, alpha[i], prec)
+                x, y, z = _rot(e[i, 0], e[i, 1], e[i, 2], 0.5 * dt * (k1[i, 0] + wx), 0.5 * dt * (k1[i, 1] + wy),
+                               0.5 * dt * (k1[i, 2] + wz))
+            else:
+                fx, fy, fz = _rhs(ep[i, 0], ep[i, 1], ep[i, 2], bx, by, bz, alpha[i], prec)
+                x = e[i, 0] + 0.5 * dt * (k1[i, 0] + fx)
+                y = e[i, 1] + 0.5 * dt * (k1[i, 1] + fy)
+                z = e[i, 2] + 0.5 * dt * (k1[i, 2] + fz)
+            q = 1.0 / np.sqrt(x * x + y * y + z * z)
+            e[i, 0], e[i, 1], e[i, 2] = x * q, y * q, z * q
+
+    # ------------------------------------------------------------------ Monte Carlo
+    @njit(parallel=True, cache=True)
+    def _mc_group(e, idx, st, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, beta, sigma, move, overrelax):
+        """One pass over the mutually non-interacting sites idx.  move: 0 gaussian, 1 uniform, 2 heat bath
+        (exact sampling of exp(beta H.e) for the linear field, Metropolis-corrected for the on-site terms);
+        overrelax: reflection about H, accepted with the on-site energy change (H.e is conserved).
+        RNG: xorshift64* streams over fixed chunks (thread-count independent).  Returns accepted moves."""
+        n = len(idx)
+        nc = st.size
+        chunk = (n + nc - 1) // nc
+        acc = np.zeros(nc, np.int64)
+        for c in prange(nc):
+            for t in range(c * chunk, min(n, (c + 1) * chunk)):
+                i = idx[t]
+                hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
+                zf = MU_B * mu[i]
+                Hx = 2 * hx + zf * B[0]
+                Hy = 2 * hy + zf * B[1]
+                Hz = 2 * hz + zf * B[2]
+                ox, oy, oz = e[i, 0], e[i, 1], e[i, 2]
+                bt = beta[i]
+                lin = True
+                if overrelax:
+                    HH = Hx * Hx + Hy * Hy + Hz * Hz
+                    if HH < 1e-28:
+                        continue
+                    p = 2 * (ox * Hx + oy * Hy + oz * Hz) / HH
+                    nx, ny, nz = p * Hx - ox, p * Hy - oy, p * Hz - oz
+                    q = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+                    nx, ny, nz = nx * q, ny * q, nz * q
+                    lin = False
+                elif move == 2:
+                    Hn = np.sqrt(Hx * Hx + Hy * Hy + Hz * Hz)
+                    xx = bt * Hn
+                    r = _unif(st, c)
+                    if xx < 1e-8 or not np.isfinite(xx):
+                        cth = 2 * r - 1 if xx < 1e-8 else 1.0
+                    else:
+                        cth = 1 + np.log1p(-r * (-np.expm1(-2 * xx))) / xx
+                    cth = min(1.0, max(-1.0, cth))
+                    ph = 2 * np.pi * _unif(st, c)
+                    if Hn > 0:
+                        zx, zy, zz = Hx / Hn, Hy / Hn, Hz / Hn
+                    else:
+                        zx, zy, zz = 0.0, 0.0, 1.0
+                    if abs(zx) < 0.9:
+                        ax, ay, az = 1.0, 0.0, 0.0
+                    else:
+                        ax, ay, az = 0.0, 1.0, 0.0
+                    t1x = zy * az - zz * ay
+                    t1y = zz * ax - zx * az
+                    t1z = zx * ay - zy * ax
+                    n1 = np.sqrt(t1x * t1x + t1y * t1y + t1z * t1z)
+                    t1x, t1y, t1z = t1x / n1, t1y / n1, t1z / n1
+                    t2x = zy * t1z - zz * t1y
+                    t2y = zz * t1x - zx * t1z
+                    t2z = zx * t1y - zy * t1x
+                    sn = np.sqrt(max(0.0, 1 - cth * cth))
+                    nx = cth * zx + sn * (np.cos(ph) * t1x + np.sin(ph) * t2x)
+                    ny = cth * zy + sn * (np.cos(ph) * t1y + np.sin(ph) * t2y)
+                    nz = cth * zz + sn * (np.cos(ph) * t1z + np.sin(ph) * t2z)
+                    lin = False
+                else:
+                    # Gaussian / uniform proposals (Box-Muller from the stream)
+                    g = np.empty(4)
+                    for kk in range(2):
+                        r1 = max(_unif(st, c), 1e-300)
+                        r2 = _unif(st, c)
+                        rr = np.sqrt(-2 * np.log(r1))
+                        g[2 * kk] = rr * np.cos(2 * np.pi * r2)
+                        g[2 * kk + 1] = rr * np.sin(2 * np.pi * r2)
+                    if move == 0:
+                        nx, ny, nz = ox + sigma * g[0], oy + sigma * g[1], oz + sigma * g[2]
+                    else:
+                        nx, ny, nz = g[0], g[1], g[2]
+                    q = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+                    nx, ny, nz = nx * q, ny * q, nz * q
+                dE = _onsite_E(i, nx, ny, nz, A, Kc, C, K2, K3, u, has_c, has_u) - \
+                    _onsite_E(i, ox, oy, oz, A, Kc, C, K2, K3, u, has_c, has_u)
+                if lin:
+                    dE -= Hx * (nx - ox) + Hy * (ny - oy) + Hz * (nz - oz)
+                if dE <= 0 or _unif(st, c) < np.exp(-min(dE * bt, 700.0)):
+                    e[i, 0], e[i, 1], e[i, 2] = nx, ny, nz
+                    acc[c] += 1
+        return acc.sum()
+
+
+def neighbour_blocks(Jsp, N):
+    """(ptr, nbr, (typ, table)): per-site neighbour list; every 3x3 coupling block is stored once in
+    ``table`` (row-major, 9 numbers) and referenced by an int32 type (translational invariance makes the
+    table tiny, so the inner loop is cache-resident and memory traffic is 8 bytes per neighbour)."""
+    J = Jsp.tocoo()
+    i, j = J.row // 3, J.col // 3
+    a, b = J.row % 3, J.col % 3
+    key = i.astype(np.int64) * N + j
+    uniq, inv = np.unique(key, return_inverse=True)
+    Jb = np.zeros((len(uniq), 9))
+    np.add.at(Jb, (inv, 3 * a + b), J.data)
+    si = (uniq // N).astype(np.int64)
+    nbr = (uniq % N).astype(np.int32)
+    ptr = np.zeros(N + 1, np.int64)
+    np.add.at(ptr, si + 1, 1)
+    ptr = np.cumsum(ptr)
+    if len(Jb) == 0:
+        return ptr, nbr, (np.zeros(0, np.int32), np.zeros((1, 9)))
+    scale = max(float(np.abs(Jb).max()), 1e-300)
+    keyb = np.round(Jb / scale * 2**40).astype(np.int64)            # exact up to ~1e-12 relative
+    table_keys, typ = np.unique(keyb, axis=0, return_inverse=True)
+    table = np.zeros((len(table_keys), 9))
+    np.add.at(table, typ.ravel(), Jb)
+    cnt = np.bincount(typ.ravel(), minlength=len(table_keys))
+    table /= cnt[:, None]
+    if len(table) > 0.5 * len(Jb):                                  # no translational symmetry to exploit
+        table = Jb
+        typ = np.arange(len(Jb))
+    return ptr, nbr, (typ.ravel().astype(np.int32), np.ascontiguousarray(table))
+
+
+class FastModel:
+    """Kernel-ready arrays of a SpinSystem (rebuild after editing couplings / terms)."""
+
+    def __init__(self, system):
+        from .terms import CubicAnisotropy, UniaxialHigher
+        s = system
+        self.sys = s
+        self.ptr, self.nbr, self.Jb = neighbour_blocks(s.Jsp, s.N)
+        self.A = np.ascontiguousarray(s.A, float)
+        self.mu = np.ascontiguousarray(s.mu, float)
+        self.Kc = np.zeros(s.N)
+        self.C = np.eye(3)
+        self.K2 = np.zeros(s.N)
+        self.K3 = np.zeros(s.N)
+        self.u = np.array([0, 0, 1.0])
+        self.has_c = self.has_u = False
+        self.other_terms = []
+        for t in s.terms:
+            if isinstance(t, CubicAnisotropy) and not self.has_c:
+                self.Kc, self.C, self.has_c = np.asarray(t.Kc, float).copy(), np.asarray(t.C, float).copy(), True
+            elif isinstance(t, UniaxialHigher) and not self.has_u:
+                self.K2, self.K3 = np.asarray(t.K2, float).copy(), np.asarray(t.K3, float).copy()
+                self.u, self.has_u = np.asarray(t.u, float).copy(), True
+            else:
+                self.other_terms.append(t)
+        self.pinned = np.zeros(s.N, np.bool_) if s.pinned is None else np.asarray(s.pinned, np.bool_)
+        self.rng_state = None
+        self.nonlocal_ = bool(self.other_terms) or s.has_higher
+
+    def extra_gradient(self, e):
+        """dE/de of everything the kernels do not cover (meV)."""
+        s = self.sys
+        g = np.zeros_like(e)
+        if s.has_higher:
+            g += s.higher_gradient(e)
+        for t in self.other_terms:
+            g += t.gradient(e)
+        return g
+
+    def args(self):
+        return (self.ptr, self.nbr, self.Jb, self.A, self.mu, np.asarray(self.sys.B, float), self.Kc, self.C, self.K2,
+                self.K3, self.u, self.has_c, self.has_u, self.pinned)
+
+    def field(self, e, out=None, extra=None):
+        out = np.empty_like(e) if out is None else out
+        has_extra = extra is not None
+        ex = extra if has_extra else np.zeros((1, 3))
+        _field(e, out, self.ptr, self.nbr, self.Jb, self.A, self.mu, np.asarray(self.sys.B, float), self.Kc,
+               self.C, self.K2, self.K3, self.u, self.has_c, self.has_u, self.pinned, ex, has_extra)
+        return out
+
+
+def seed_streams(seed, n=256):
+    """xorshift64* states for the chunked parallel Gaussian generator."""
+    ss = np.random.SeedSequence(int(seed) if seed is not None else None)
+    st = ss.generate_state(n, dtype=np.uint64)
+    st[st == 0] = np.uint64(0x9E3779B97F4A7C15)
+    return st
+
+
+def available():
+    return HAVE_NUMBA
+
+
+def set_threads(n):
+    if HAVE_NUMBA:
+        numba.set_num_threads(int(n))

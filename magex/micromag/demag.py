@@ -121,14 +121,23 @@ class Demag:
             log(f"  demag kernel {self.fshape}, cell factors Nxx,Nyy,Nzz = {np.round(self.N0[:3], 4).tolist()}")
 
     def field(self, M):
-        """H (A/m), shape (nx,ny,nz,3), for magnetisation M = Ms m (A/m)."""
+        """H (A/m), shape (nx,ny,nz,3), for magnetisation M = Ms m (A/m).
+
+        ``self.single = True`` runs the FFT convolution in single precision (as mumax3 does): about twice
+        as fast, relative error ~1e-7 in H_d; the default is double precision."""
         n = self.mesh.n
         kw = {} if self.workers is None else dict(workers=self.workers)
-        Mk = [sfft.rfftn(M[..., c], s=self.fshape, axes=(0, 1, 2), **kw) for c in range(3)]
-        xx, yy, zz, xy, xz, yz = self.K
+        single = getattr(self, "single", False)
+        if single and getattr(self, "_K32", None) is None:
+            self._K32 = self.K.astype(np.complex64)
+        K = self._K32 if single else self.K
+        Mc = M.astype(np.float32) if single else M
+        Mk = [sfft.rfftn(Mc[..., c], s=self.fshape, axes=(0, 1, 2), **kw) for c in range(3)]
+        xx, yy, zz, xy, xz, yz = K
         Hk = (xx * Mk[0] + xy * Mk[1] + xz * Mk[2],
               xy * Mk[0] + yy * Mk[1] + yz * Mk[2],
               xz * Mk[0] + yz * Mk[1] + zz * Mk[2])
-        kw = {} if self.workers is None else dict(workers=self.workers)
-        comps = [-sfft.irfftn(Hk[c], s=self.fshape, axes=(0, 1, 2), **kw)[:n[0], :n[1], :n[2]] for c in range(3)]
-        return np.stack(comps, axis=-1)
+        out = np.empty(tuple(n) + (3,))
+        for c in range(3):
+            out[..., c] = -sfft.irfftn(Hk[c], s=self.fshape, axes=(0, 1, 2), **kw)[:n[0], :n[1], :n[2]]
+        return out

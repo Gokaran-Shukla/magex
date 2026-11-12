@@ -117,6 +117,7 @@ class Micromagnet:
         if self._demag is None and self.use_demag:
             from .demag import Demag
             self._demag = Demag(self.mesh, self.workers, log=self.log)
+            self._demag.single = bool(getattr(self, "demag_single", False))
         return self._demag
 
     def set_field(self, B):
@@ -208,40 +209,16 @@ class Micromagnet:
         Ms = self.Ms
         xp = self.xp
         inv = xp.where(Ms > 0, 1.0 / xp.where(Ms > 0, Ms, 1.0), 0.0)[..., None]
-        st = self._stencil(m)
-        F = {}
-        lap = np.zeros_like(m)
-        grad = []
-        for axis, (p, Ap, q, Aq) in enumerate(st):
-            if Ap is None:
-                grad.append(np.zeros_like(m))
-                continue
-            d2 = self.mesh.d[axis] ** 2
-            lap += self.exchange_axis_scale[axis] * (Ap[..., None] * (p - m) + Aq[..., None] * (q - m)) / d2
-            grad.append((p - q) / (2 * self.mesh.d[axis]))
-        F["exchange"] = 2 * inv * lap
-        if np.any(self.D_int) or self.inter_dmi:
-            # spatially varying D: link constants (energy-consistent); uniform D: cell value
-            Dm = self.D_int[self.magnetic]
-            link = bool(self.inter_dmi) or (Dm.size and float(Dm.max() - Dm.min()) > 0)
-            gx, gy = (self._dmi_link_gradients(m, st)[:2] if link else grad[:2])
-            Bd = np.stack([gx[..., 2], gy[..., 2], -gx[..., 0] - gy[..., 1]], -1)
-            F["dmi"] = 2 * (inv[..., 0] if link else self.D_int * inv[..., 0])[..., None] * Bd
-        if np.any(self.D_bulk):
-            gx, gy, gz = grad
-            curl = np.stack([gy[..., 2] - gz[..., 1], gz[..., 0] - gx[..., 2], gx[..., 1] - gy[..., 0]], -1)
-            Bb = -2 * (self.D_bulk * inv[..., 0])[..., None] * curl
-            F["dmi"] = F.get("dmi", 0) + Bb
-        if np.any(self.Ku1) or np.any(self.Ku2):
-            mu = np.einsum("...a,...a->...", m, self.anisU)
-            F["anisotropy"] = ((2 * self.Ku1 * mu + 4 * self.Ku2 * mu**3) * inv[..., 0])[..., None] * self.anisU
-        if np.any(self.Kc1):
-            c1, c2 = self.anisC1, self.anisC2
-            c3 = np.cross(c1, c2)
-            a1, a2, a3 = (np.einsum("...a,...a->...", m, c) for c in (c1, c2, c3))
-            pre = (-2 * self.Kc1 * inv[..., 0])[..., None]
-            F["cubic"] = pre * ((a1 * (a2**2 + a3**2))[..., None] * c1 + (a2 * (a1**2 + a3**2))[..., None] * c2
-                                + (a3 * (a1**2 + a2**2))[..., None] * c3)
+        Dm = self.D_int[self.magnetic]
+        link = bool(self.inter_dmi) or (Dm.size and float(Dm.max() - Dm.min()) > 0)
+        fastpath = self.xp is np and getattr(self, "use_fast", True) and not link
+        if fastpath:
+            from .fastmm import HAVE, local_fields
+            fastpath = HAVE
+        if fastpath:
+            F = local_fields(self, m)
+        else:
+            F = self._local_fields_numpy(m, inv, link)
         if np.any(self.Kc2) or np.any(self.Kc3):
             c1, c2 = self.anisC1, self.anisC2
             c3 = np.cross(c1, c2)
@@ -297,6 +274,43 @@ class Micromagnet:
         mag = self.magnetic[..., None]
         for k in F:
             F[k] = np.where(mag, F[k], 0.0)
+        return F
+
+    def _local_fields_numpy(self, m, inv, link):
+        st = self._stencil(m)
+        F = {}
+        lap = np.zeros_like(m)
+        grad = []
+        for axis, (p, Ap, q, Aq) in enumerate(st):
+            if Ap is None:
+                grad.append(np.zeros_like(m))
+                continue
+            d2 = self.mesh.d[axis] ** 2
+            lap += self.exchange_axis_scale[axis] * (Ap[..., None] * (p - m) + Aq[..., None] * (q - m)) / d2
+            grad.append((p - q) / (2 * self.mesh.d[axis]))
+        F["exchange"] = 2 * inv * lap
+        if np.any(self.D_int) or self.inter_dmi:
+            # spatially varying D: link constants (energy-consistent); uniform D: cell value
+            Dm = self.D_int[self.magnetic]
+            link = bool(self.inter_dmi) or (Dm.size and float(Dm.max() - Dm.min()) > 0)
+            gx, gy = (self._dmi_link_gradients(m, st)[:2] if link else grad[:2])
+            Bd = np.stack([gx[..., 2], gy[..., 2], -gx[..., 0] - gy[..., 1]], -1)
+            F["dmi"] = 2 * (inv[..., 0] if link else self.D_int * inv[..., 0])[..., None] * Bd
+        if np.any(self.D_bulk):
+            gx, gy, gz = grad
+            curl = np.stack([gy[..., 2] - gz[..., 1], gz[..., 0] - gx[..., 2], gx[..., 1] - gy[..., 0]], -1)
+            Bb = -2 * (self.D_bulk * inv[..., 0])[..., None] * curl
+            F["dmi"] = F.get("dmi", 0) + Bb
+        if np.any(self.Ku1) or np.any(self.Ku2):
+            mu = np.einsum("...a,...a->...", m, self.anisU)
+            F["anisotropy"] = ((2 * self.Ku1 * mu + 4 * self.Ku2 * mu**3) * inv[..., 0])[..., None] * self.anisU
+        if np.any(self.Kc1):
+            c1, c2 = self.anisC1, self.anisC2
+            c3 = np.cross(c1, c2)
+            a1, a2, a3 = (np.einsum("...a,...a->...", m, c) for c in (c1, c2, c3))
+            pre = (-2 * self.Kc1 * inv[..., 0])[..., None]
+            F["cubic"] = pre * ((a1 * (a2**2 + a3**2))[..., None] * c1 + (a2 * (a1**2 + a3**2))[..., None] * c2
+                                + (a3 * (a1**2 + a2**2))[..., None] * c3)
         return F
 
     def _custom_energy_field(self, fn, m, inv, h=1e-6):

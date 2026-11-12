@@ -41,6 +41,7 @@ def build(cfg, base=".", log=print):
     mc = cfg["mesh"]
     mesh = Mesh(mc["n"], np.array(mc["cell_nm"], float) * 1e-9, mc.get("pbc", [False] * 3), mc.get("pbc_images", 10))
     sysm = Micromagnet(mesh, demag=cfg.get("demag", {}).get("enabled", True), log=log)
+    sysm.demag_single = cfg.get("demag", {}).get("precision", "double") == "single"
     regions = cfg.get("region") or [dict(material="Py")]
     for k, r in enumerate(regions):
         r = dict(r)
