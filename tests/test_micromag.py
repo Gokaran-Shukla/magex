@@ -248,3 +248,22 @@ def test_first_principles_sot_and_spin_pumping():
     jdc, _ = pumped_spin_current(np.column_stack([t, m]), g)
     from magex.micromag.constants import HBAR
     assert abs(jdc[0] / (HBAR / (4 * np.pi) * g * w * np.sin(th) ** 2) - 1) < 1e-3
+
+
+def test_llb_mean_field_and_relaxation():
+    from magex.micromag.llb import LLB, langevin, m_eq, scaled_parameters
+    for T in (100.0, 400.0, 600.0):
+        me = m_eq(T, 630.0)
+        assert abs(me - float(langevin(3 * 630.0 * me / T))) < 1e-10
+    assert m_eq(700.0, 630.0) == 0.0
+    sc = scaled_parameters(dict(Ms=1e6, A=1e-11, Ku1=1e5), 300.0, 630.0)
+    assert abs(sc["Ku1"] / 1e5 - sc["m_e"] ** 3) < 1e-12
+    mesh = Mesh((1, 1, 1), (2e-9,) * 3)
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=4.9e5, A=9e-12, Ku1=1e4)
+    llb = LLB(s, Tc=630.0, lam=0.05, mu_s=0.6)
+    llb.set_temperature(400.0)
+    m = np.zeros(mesh.n + (3,))
+    m[..., 2] = 1.0
+    m, _ = llb.run(m, 3e-12, 2e-16)
+    assert abs(np.linalg.norm(m[0, 0, 0]) - m_eq(400.0, 630.0)) < 1e-4

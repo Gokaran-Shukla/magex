@@ -27,6 +27,7 @@ own from a model Hamiltonian or a material library.
 | 12 | [Antiferro-, ferri- and altermagnets](12_antiferromagnets.md) | two-sublattice micromagnetics, AFMR, chiral magnon splitting, SOT-driven AFM walls | 1–2 min |
 | 13 | [Spin-transfer and spin-orbit torques](13_spin_torques.md) | Zhang–Li, Slonczewski, SOT; skyrmion Hall angle vs Thiele | 1 min |
 | 14 | [First-principles torques and spin pumping](14_first_principles_sot.md) | θ from spin/orbital Hall conductivities, orbital torque, Δα, ISHE voltage | seconds |
+| 15 | [Finite temperature: Callen–Callen and LLB](15_temperature_llb.md) | A(T), K(T), Ms(T) from mean field or Monte Carlo; LLB + two-temperature model, ultrafast demagnetisation | 1 min |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

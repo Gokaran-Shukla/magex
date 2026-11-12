@@ -55,6 +55,19 @@ def build(cfg, base=".", log=print):
             mat.update(Ms=mp["Ms"], A=mp["A"], D=D, dmi="interfacial" if abs(mp["D_int"]) >= abs(mp["D_bulk"]) else "bulk",
                        Ku1=mp["Ku"], anisU=[0, 0, 1])
         mat.update({k2: v for k2, v in r.items() if k2 in _MAT_KEYS})
+        if "temperature_K" in r:                  # Callen-Callen scaling to a finite temperature
+            from .llb import MCScaling, m_eq, scaled_parameters
+            T = float(r["temperature_K"])
+            if "mc_results" in r:
+                pth = r["mc_results"] if os.path.isabs(r["mc_results"]) else os.path.join(base, r["mc_results"])
+                me = MCScaling(pth)(T)
+            else:
+                me = m_eq(T, float(r["Tc"]))
+            sc = scaled_parameters(mat, T, r.get("Tc", 1e9), me, r.get("A_exponent", 1.8), r.get("K_exponent", 3.0))
+            sc.pop("m_e")
+            mat = sc
+            log(f"  region {k}: T = {T:g} K, m_e = {me:.4f} -> Ms = {mat['Ms']:.4g} A/m, A = {mat.get('A', 0):.4g} J/m, "
+                f"Ku1 = {mat.get('Ku1', 0):.4g} J/m^3")
         if isinstance(mat.get("alpha"), dict):          # alpha = {from = "damping_n001.json", eta_meV = 50}
             from ..damping import resolve_alpha
             mat["alpha"] = resolve_alpha(mat["alpha"], base)

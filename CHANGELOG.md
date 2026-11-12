@@ -25,6 +25,9 @@
   finite thickness); spin pumping (Delta alpha, DC spin current, ISHE voltage)
 - biquadratic and four-spin interactions in the atomistic spin model (LLG, GNEB, Monte Carlo);
   biquadratic constants from the Lloyd finite-angle fits (`biquadratic = "lloyd"`)
+- finite temperature in micromagnetics: Callen-Callen scaling of Ms, A, K, D from mean field or a
+  Monte Carlo m(T) (`temperature_K`, `mc_results`); Landau-Lifshitz-Bloch solver and two-temperature
+  model; ultrafast demagnetisation example
 
 ## 0.2.0 (2026-11-12)
 
