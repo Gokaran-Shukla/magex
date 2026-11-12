@@ -292,6 +292,8 @@ def run_gneb_config(cfg, base=".", log=print):
         system = SpinSystem(uc, sm.get("supercell", [30, 30, 1]), sm.get("pbc", [True, True, False]),
                             g["field"] or [0, 0, 0])
         log(system.summary())
+        from .structure import apply_structure
+        apply_structure(system, cfg.get("structure"), log)
         ad = AtomisticAdapter(system)
 
         def state(spec):

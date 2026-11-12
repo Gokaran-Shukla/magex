@@ -243,6 +243,12 @@ class SpinSystem:
         self.bonds = np.concatenate(self.bonds) if self.bonds else np.zeros((0, 2), int)
         self.has_A = bool(np.max(np.abs(A)) > 0)
         self._build_higher_order(cells, Lv, cidx, ns)
+        self.terms = []                 # extra energy terms (magex.terms)
+        self.pinned = None              # (N,) bool: fixed spins
+        self.site_T = None              # (N,) K: site-resolved temperature (gradients, laser spots)
+        self.material = np.zeros(self.N, int)
+        self.material_names = ["bulk"]
+        self.grid_index = np.arange(self.N)   # position of every site in the full supercell grid
         self.set_field(field)
 
     # -------------------------------------------------------------- higher-order interactions
@@ -392,6 +398,55 @@ class SpinSystem:
             out += -self.K4 * np.sum(np.where(valid, f, 0.0), axis=1)
         return out
 
+    # -------------------------------------------------------------- structure editing
+    def carve(self, keep):
+        """Remove all sites with keep == False (shapes, vacancies, roughness).  Call before adding terms."""
+        keep = np.asarray(keep, bool)
+        if keep.all():
+            return
+        if self.terms:
+            raise RuntimeError("carve() must be called before energy terms are added")
+        new = -np.ones(self.N, int)
+        new[keep] = np.arange(int(keep.sum()))
+        k3 = np.repeat(keep, 3)
+        self.Jsp = self.Jsp.tocsr()[k3][:, k3].tocsr()
+        b = self.bonds
+        ok = keep[b[:, 0]] & keep[b[:, 1]]
+        self.bonds = new[b[ok]]
+        if self.bq is not None:
+            s_, d_, v_ = self.bq
+            ok = keep[s_] & keep[d_]
+            self.bq = (new[s_[ok]], new[d_[ok]], v_[ok])
+        if self.plaq is not None:
+            ok = keep[self.plaq].all(1)
+            self.plaq = new[self.plaq[ok]]
+        for name in ("sublattice", "cell_index", "positions", "mu", "signs", "ref", "A", "material",
+                     "grid_index", "pinned", "site_T", "pinned_dir", "alpha_site"):
+            v = getattr(self, name, None)
+            if v is not None:
+                setattr(self, name, v[keep])
+        self.N = int(keep.sum())
+        self.has_higher = self.bq is not None or (self.plaq is not None and len(self.plaq) > 0)
+        if self.has_higher:
+            self._local_tables()
+
+    def scale_exchange(self, f):
+        """Multiply every coupling J_ij by f[material_i, material_j] (interface exchange)."""
+        f = np.asarray(f, float)
+        J = self.Jsp.tocoo()
+        w = f[self.material[J.row // 3], self.material[J.col // 3]]
+        self.Jsp = sp.csr_matrix((J.data * w, (J.row, J.col)), shape=J.shape)
+        if self.bq is not None:
+            s_, d_, v_ = self.bq
+            self.bq = (s_, d_, v_ * f[self.material[s_], self.material[d_]])
+            self._local_tables()
+
+    def coordination(self):
+        """Number of exchange neighbours of every site."""
+        c = np.zeros(self.N, int)
+        np.add.at(c, self.bonds[:, 0], 1)
+        return c
+
     # -------------------------------------------------------------- field / energy
     def set_field(self, B):
         self.B = np.asarray(B, float).reshape(3)
@@ -407,6 +462,10 @@ class SpinSystem:
             g += 2.0 * np.einsum("iab,ib->ia", self.A, e)
         if self.has_higher:
             g += self.higher_gradient(e)
+        for t in self.terms:
+            g += t.gradient(e)
+        if self.pinned is not None:
+            g[self.pinned] = 0.0
         return g
 
     def effective_field(self, e):
@@ -420,11 +479,19 @@ class SpinSystem:
             E += np.einsum("ia,iab,ib->", e, self.A, e)
         if self.has_higher:
             E += self.higher_energy(e)
+        for t in self.terms:
+            E += t.energy(e)
         return E / self.N if per_spin else E
 
     # -------------------------------------------------------------- configurations
-    def init_spins(self, kind="reference", axis=(0, 0, 1), seed=None, cone=0.0, path=None):
+    def init_spins(self, kind="reference", axis=(0, 0, 1), seed=None, cone=0.0, path=None, **texture):
         rng = np.random.default_rng(seed)
+        if kind in ("spiral", "skyrmion", "skyrmions", "hopfion", "domain", "bubble"):
+            from .structure import init_texture
+            e = init_texture(self, kind, axis=axis, seed=seed, **texture)
+            if self.pinned is not None and hasattr(self, "pinned_dir"):
+                e[self.pinned] = self.pinned_dir[self.pinned]
+            return normalize(e + (cone * rng.normal(size=e.shape) if cone > 0 else 0))
         if kind == "random":
             e = rng.normal(size=(self.N, 3))
         elif kind == "ferro":
@@ -442,7 +509,10 @@ class SpinSystem:
             raise ValueError(f"unknown initial state '{kind}'")
         if cone > 0:
             e = e + cone * rng.normal(size=e.shape)
-        return normalize(e)
+        e = normalize(e)
+        if self.pinned is not None and hasattr(self, "pinned_dir"):
+            e[self.pinned] = self.pinned_dir[self.pinned]
+        return e
 
     def order_parameter(self, e):
         """|sum_i s_i e_i| / N (ferromagnet: magnetisation; AFM: Neel vector)."""

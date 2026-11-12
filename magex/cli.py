@@ -112,7 +112,7 @@ def _raw_cfg(path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="magex", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "gneb", "mc", "micromag", "params", "tc", "model", "import-tb2j", "export"])
+    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "gneb", "mc", "micromag", "params", "tc", "model", "import-tb2j", "export", "program"])
     ap.add_argument("config", help="input TOML (results.json for 'params', output path for 'model')")
     ap.add_argument("--field", type=float, nargs=3, default=None, help="llg: override B (T)")
     ap.add_argument("--J", default="mft", help="params: mft | bruno | downfold")
@@ -152,6 +152,10 @@ def main(argv=None):
         from .spectra import run_sqw_config
         cfg, base = _raw_cfg(a.config)
         run_sqw_config(cfg, base)
+    elif a.task == "program":
+        from .programs import run_program_config
+        cfg, base = _raw_cfg(a.config)
+        run_program_config(cfg, base)
     elif a.task == "gneb":
         from .gneb import run_gneb_config
         cfg, base = _raw_cfg(a.config)

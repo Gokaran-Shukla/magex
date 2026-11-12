@@ -40,7 +40,7 @@ def oersted_field(mesh, J):
     B = np.zeros(n + (3,))
     for a, (b, c) in enumerate(((1, 2), (2, 0), (0, 1))):
         conv = Jf[b] * Kf[c] - Jf[c] * Kf[b]
-        B[..., a] = pre * np.fft.irfftn(conv, s=shape)[:n[0], :n[1], :n[2]]
+        B[..., a] = pre * np.fft.irfftn(conv, s=shape, axes=(0, 1, 2))[:n[0], :n[1], :n[2]]
     return B
 
 

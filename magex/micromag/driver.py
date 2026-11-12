@@ -31,8 +31,10 @@ from .solver import TABLE_HEADER, Heun, RK45, hysteresis, minimize, relax
 from .system import Micromagnet
 
 _GEOM_KEYS = {"center_nm", "z_layers", "rotate_deg", "size_nm", "diameter_nm", "diameters_nm", "outer_nm",
-              "inner_nm", "vertices_nm", "side_nm", "path", "threshold", "invert", "subtract"}
-_MAT_KEYS = {"Ms", "A", "D", "dmi", "Ku1", "Ku2", "anisU", "Kc1", "anisC1", "anisC2", "alpha"}
+              "inner_nm", "vertices_nm", "side_nm", "path", "threshold", "invert", "subtract", "height_nm",
+              "rotate_x_deg", "rotate_y_deg", "shapes"}
+_MAT_KEYS = {"Ms", "A", "D", "dmi", "Ku1", "Ku2", "anisU", "Kc1", "Kc2", "Kc3", "anisC1", "anisC2", "alpha",
+             "B1", "B2", "frozen"}
 
 
 def build(cfg, base=".", log=print):
@@ -77,6 +79,32 @@ def build(cfg, base=".", log=print):
             gp["path"] = os.path.join(base, gp["path"])
         mask = geometry_mask(mesh, shape, **gp)
         sysm.add_region(mask, r.get("name", r.get("material", f"region{k}")), **mat)
+        if r.get("edge_smooth"):                  # mumax3 EdgeSmooth: sub-cell volume fractions in the demag field
+            from .mesh import volume_fraction
+            f = volume_fraction(mesh, shape, int(r["edge_smooth"]), **gp)
+            if sysm.geom is None:
+                sysm.geom = np.ones(mesh.n)
+            sysm.geom = np.where(f > 0, np.where(mask, f, sysm.geom), sysm.geom)
+            if np.any((f > 0) & ~mask):           # partially filled cells outside the staircase mask
+                extra = (f > 0) & ~mask & (sysm.region < 0)
+                sysm.add_region(extra, sysm.region_names[-1] + "_edge", **mat)
+                sysm.geom[extra] = f[extra]
+    from .custom import custom_energy, custom_field
+    for d in cfg.get("inter_dmi", []):            # [[inter_dmi]] regions = [0, 1], D = 1e-3 (J/m^2)
+        sysm.inter_dmi[tuple(d["regions"])] = float(d["D"])
+    for cf in cfg.get("custom_field", []):
+        sysm.custom_fields.append(custom_field(cf, mesh))
+    for ce in cfg.get("custom_energy", []):
+        sysm.custom_energies.append(custom_energy(ce, mesh))
+    if "magnetoelastic" in cfg:                   # [magnetoelastic] strain = [exx, eyy, ezz, exy, exz, eyz] or file
+        me = cfg["magnetoelastic"]
+        st_ = me["strain"]
+        if isinstance(st_, str):
+            st_ = np.load(st_ if os.path.isabs(st_) else os.path.join(base, st_))
+        sysm.strain = np.asarray(st_, float)
+        for key in ("B1", "B2"):
+            if key in me:
+                sysm.__dict__[key][sysm.magnetic] = float(me[key])
     for pair in cfg.get("interlayer", []):        # [[interlayer]] regions=[0,1] scale=0.5
         sysm.exchange_scale[tuple(pair["regions"])] = float(pair.get("scale", 1.0))
     from . import extras
@@ -243,8 +271,48 @@ def run_micromag_config(cfg, base=".", log=print):
                         nxt[0] += every
                     if cb1:
                         cb1(t, mm)
-            solver = RK45(sysm, tol=st.get("tol", 1e-5))
+            if st.get("moving_frame"):
+                from .custom import MovingFrame
+                mf_ = st["moving_frame"]
+                mf_ = {} if mf_ is True else mf_
+                frame = MovingFrame(sysm, mf_.get("component", "z"), mf_.get("axis", "x"))
+                cb2 = cb
+
+                def cb(t, mm, cb2=cb2, frame=frame):
+                    frame(t, mm)
+                    if cb2:
+                        cb2(t, mm)
+            else:
+                frame = None
+            if st.get("autosave_ps"):                     # mumax3 autosave(m, dt): OVF snapshots
+                every_a = st["autosave_ps"] * 1e-12
+                nxa = [sysm.t]
+                cnt = [0]
+                cb3 = cb
+
+                def cb(t, mm, cb3=cb3, nxa=nxa, cnt=cnt, every_a=every_a, tag=tag):
+                    if t >= nxa[0] - 1e-18:
+                        write_ovf(os.path.join(outdir, f"m_{tag}_{cnt[0]:06d}.ovf"), mm, sysm.mesh, title=f"t = {t:.4e} s")
+                        cnt[0] += 1
+                        nxa[0] += every_a
+                    if cb3:
+                        cb3(t, mm)
+            from .solver import make_solver
+            solver = make_solver(sysm, st.get("solver", "rk45"), st.get("tol", 1e-5),
+                                 st.get("dt_fs", 10.0) * 1e-15 if st.get("solver", "rk45") not in ("rk45", "rk23") else None)
             m, table = solver.run(m, duration, rec, cb, log=log)
+            if frame is not None and len(frame.positions) > 2:
+                fp = np.array(frame.positions)
+                np.savetxt(os.path.join(outdir, f"wall_position_{tag}.txt"), fp, header="t_s x_wall_m (lab frame)")
+                sel = fp[:, 0] > fp[0, 0] + 0.3 * (fp[-1, 0] - fp[0, 0])
+                v = float(np.polyfit(fp[sel, 0], fp[sel, 1], 1)[0])
+                info.update(wall_velocity_m_s=v, frame_shift_cells=frame.shift)
+                log(f"    moving frame: shifted {frame.shift} cells, wall velocity {v:.2f} m/s")
+            for fname in st.get("save_fields", []):       # field maps (mumax3 save(B_demag) ...)
+                Fd = sysm.fields(m)
+                if fname in Fd:
+                    write_ovf(os.path.join(outdir, f"B_{fname}_{tag}.ovf"), np.asarray(Fd[fname]), sysm.mesh,
+                              title=f"B_{fname} (T)")
             if getattr(sysm, "spin_pumping", None):
                 from .fp_torques import ishe_voltage, pumped_spin_current
                 sp = sysm.spin_pumping

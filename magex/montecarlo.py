@@ -49,18 +49,51 @@ def greedy_coloring(N, bonds):
     return color
 
 
+def _heatbath(H, beta, rng):
+    """Directions distributed as exp(beta H.e) on the unit sphere (H in meV, beta in 1/meV)."""
+    n = len(H)
+    Hn = np.linalg.norm(H, axis=1)
+    x = np.broadcast_to(beta, (n,)) * Hn
+    u = rng.random(n)
+    small = x < 1e-8
+    xs = np.where(small, 1.0, x)
+    c = np.where(small, 2 * u - 1, 1 + np.log1p(-u * (-np.expm1(-2 * xs))) / xs)
+    c = np.clip(c, -1, 1)
+    ph = 2 * np.pi * rng.random(n)
+    z = np.where(small[:, None], np.array([0, 0, 1.0]), H / np.where(Hn > 0, Hn, 1)[:, None])
+    a = np.where(np.abs(z[:, :1]) < 0.9, np.array([[1.0, 0, 0]]), np.array([[0, 1.0, 0]]))
+    t1 = normalize(np.cross(z, a))
+    t2 = np.cross(z, t1)
+    s_ = np.sqrt(1 - c * c)[:, None]
+    return normalize(c[:, None] * z + s_ * (np.cos(ph)[:, None] * t1 + np.sin(ph)[:, None] * t2))
+
+
 class MetropolisMC:
-    def __init__(self, system: SpinSystem, temperature, seed=None, sigma=0.6, overrelax=1):
+    def __init__(self, system: SpinSystem, temperature, seed=None, sigma=0.6, overrelax=1, move="gaussian"):
+        """move: "gaussian" (adaptive cone, default), "uniform" (random direction), "heatbath" (exact
+        heat-bath sampling of the linear exchange + Zeeman field, Metropolis-corrected for anisotropy and
+        all nonlinear terms -> acceptance ~1 for weakly anisotropic magnets), "hinzke" (VAMPIRE-style
+        mixture of gaussian, uniform and spin-flip moves)."""
+        self.move = move
         self.sys = system
         self.T = float(temperature)
         self.rng = np.random.default_rng(seed)
         self.sigma = float(sigma)
         self.overrelax = int(overrelax)
-        col = greedy_coloring(system.N, system.bonds)
+        bonds = system.bonds
+        extra = [t.bonds() for t in getattr(system, "terms", []) if t.bonds() is not None]
+        if extra:
+            bonds = np.concatenate([bonds] + extra)
+        col = greedy_coloring(system.N, bonds)
         self.groups = []
         J = system.Jsp.tocsr()
+        pinned = getattr(system, "pinned", None)
         for c in range(col.max() + 1):
             idx = np.where(col == c)[0]
+            if pinned is not None:
+                idx = idx[~pinned[idx]]
+            if len(idx) == 0:
+                continue
             rows = (3 * idx[:, None] + np.arange(3)[None, :]).ravel()
             self.groups.append((idx, J[rows], system.A[idx], system.mu[idx]))
         self.ncolors = len(self.groups)
@@ -75,7 +108,21 @@ class MetropolisMC:
         if self.sys.has_higher:
             e = self._e
             dE += self.sys.local_higher_energy(idx, en, e) - self.sys.local_higher_energy(idx, eo, e)
+        for t in getattr(self.sys, "terms", []):
+            dE += t.local_energy(idx, en, self._e) - t.local_energy(idx, eo, self._e)
         return dE
+
+    def _beta(self, idx):
+        sT = getattr(self.sys, "site_T", None)
+        if sT is not None:
+            T = np.where(np.isnan(sT[idx]), self.T, sT[idx])
+            return 1.0 / (K_B * np.maximum(T, 1e-9))
+        return 1.0 / (K_B * self.T) if self.T > 0 else np.inf
+
+    def _refresh(self, e):
+        for t in getattr(self.sys, "terms", []):
+            if t.long_range:
+                t.refresh(e)
 
     def sweep(self, e):
         self._e = e
@@ -84,9 +131,16 @@ class MetropolisMC:
         for idx, Jc, A, mu in self.groups:
             h = (Jc @ flat).reshape(-1, 3)
             eo = e[idx]
-            en = normalize(eo + self.sigma * self.rng.normal(size=eo.shape))
-            dE = self._dE(idx, A, mu, eo, en, h)
-            acc = (dE <= 0) | (self.rng.random(len(idx)) < np.exp(-np.clip(dE * beta, 0, 700)))
+            b = self._beta(idx) if getattr(self.sys, "site_T", None) is not None else beta
+            self._refresh(e)
+            if self.move == "heatbath" and np.all(np.isfinite(b)):
+                H = 2.0 * h + MU_B * mu[:, None] * self.sys.B[None, :]       # linear local field (meV)
+                en = _heatbath(H, b, self.rng)
+                dE = self._dE(idx, A, mu, eo, en, h) + np.einsum("ij,ij->i", en - eo, H)  # nonlinear part only
+            else:
+                en = self._propose(eo)
+                dE = self._dE(idx, A, mu, eo, en, h)
+            acc = (dE <= 0) | (self.rng.random(len(idx)) < np.exp(-np.clip(dE * b, 0, 700)))
             e[idx[acc]] = en[acc]
             self.accepted += int(acc.sum())
             self.tried += len(idx)
@@ -99,10 +153,25 @@ class MetropolisMC:
                 en = eo.copy()
                 en[ok] = 2.0 * (np.einsum("ij,ij->i", eo[ok], h[ok]) / hh[ok])[:, None] * h[ok] - eo[ok]
                 en = normalize(en)
+                self._refresh(e)
                 dE = self._dE(idx, A, mu, eo, en, h)
-                acc = (dE <= 1e-12) | (self.rng.random(len(idx)) < np.exp(-np.clip(dE * beta, 0, 700)))
+                b = self._beta(idx) if getattr(self.sys, "site_T", None) is not None else beta
+                acc = (dE <= 1e-12) | (self.rng.random(len(idx)) < np.exp(-np.clip(dE * b, 0, 700)))
                 e[idx[acc]] = en[acc]
         return e
+
+    def _propose(self, eo):
+        n = eo.shape
+        if self.move == "uniform":
+            return normalize(self.rng.normal(size=n))
+        if self.move == "hinzke":
+            k = self.rng.integers(0, 3, len(eo))
+            en = normalize(eo + self.sigma * self.rng.normal(size=n))
+            u = normalize(self.rng.normal(size=n))
+            en[k == 1] = u[k == 1]
+            en[k == 2] = -eo[k == 2]
+            return en
+        return normalize(eo + self.sigma * self.rng.normal(size=n))
 
     def acceptance(self, reset=True):
         a = self.accepted / max(self.tried, 1)
@@ -122,7 +191,9 @@ def _point(args):
     """One (system size, temperature) Monte Carlo run (picklable for process pools)."""
     uc, L, pbc, B, T, c, seed = args
     system = SpinSystem(uc, L, pbc, B)
-    mc = MetropolisMC(system, T, seed, c["sigma"], c["overrelax"])
+    from .structure import apply_structure
+    apply_structure(system, c.get("structure"))
+    mc = MetropolisMC(system, T, seed, c["sigma"], c["overrelax"], c.get("move", "gaussian"))
     e = system.init_spins(c["init"], c["init_axis"], seed)
     t0 = time.time()
     for n in range(c["therm_sweeps"]):
@@ -224,6 +295,7 @@ def run_mc_config(cfg, base=".", log=print):
     c = dict(dict(temperatures="auto", sizes=None, therm_sweeps=2000, meas_sweeps=4000, sample_every=2,
                   field=[0.0, 0.0, 0.0], init="reference", init_axis=[0, 0, 1], seed=7, nproc=None,
                   sigma=0.6, overrelax=1, outdir="mc_out", refine=False), **cfg.get("mc", {}))
+    c["structure"] = cfg.get("structure")
     outdir = c["outdir"] if os.path.isabs(c["outdir"]) else os.path.join(base, c["outdir"])
     os.makedirs(outdir, exist_ok=True)
     pbc = sm.get("pbc", [True, True, True])
@@ -260,6 +332,8 @@ def run_mc_config(cfg, base=".", log=print):
             out = []
             for k, L in enumerate(sizes):
                 system = SpinSystem(uc, tuple(L), pbc, B)
+                from .structure import apply_structure
+                apply_structure(system, c.get("structure"))
                 rows_L, swap = parallel_tempering(system, Tlist, c["therm_sweeps"], c["meas_sweeps"], c["sample_every"],
                                                   int(c.get("swap_every", 5)), int(c["seed"]) + 1000 * k, c["init"],
                                                   c["init_axis"], c["sigma"], c["overrelax"], log)
@@ -402,3 +476,55 @@ def plot_mc(rows, est, path):
     fig.suptitle(f"Monte Carlo: {est['label']} = {est['Tc']:.1f} K  ({est['method']})", fontsize=9.5)
     savefig(fig, path)
     plt.close(fig)
+
+
+# ----------------------------------------------------------------------------- longitudinal fluctuations
+class LSFMonteCarlo(MetropolisMC):
+    """Monte Carlo with longitudinal spin fluctuations (Ma & Dudarev, PRB 83, 134418 (2011)).
+
+    Spins are vectors M_i = s_i e_i (s in units of the reference moment); the Hamiltonian is
+
+        E = -sum_ij M_i.J_ij.M_j + sum_i M_i.A_i.M_i - mu_B sum_i mu_i M_i.B + sum_i (a_i s_i^2 + b_i s_i^4)
+
+    with the Landau coefficients chosen (default) so that the T = 0 reference state has s = 1:
+    a_i = h_i.e_i - 2 b_i, h_i the reference exchange field.  ``b`` (meV) sets the longitudinal stiffness.
+    measure "d3M" (default, Cartesian phase space) or "dsdOmega" (no s^2 Jacobian).
+    """
+
+    def __init__(self, system, temperature, seed=None, sigma=0.3, b=1.0, a=None, measure="d3M"):
+        super().__init__(system, temperature, seed, sigma, overrelax=0)
+        if system.has_higher or system.terms:
+            raise NotImplementedError("LSF Monte Carlo supports bilinear exchange, SIA and field")
+        ref = system.ref
+        h = (system.Jsp @ ref.reshape(-1)).reshape(-1, 3)
+        self.b = np.broadcast_to(np.asarray(b, float), (system.N,)).copy()
+        self.a = (np.einsum("ia,ia->i", h, ref) - 2 * self.b) if a is None else np.broadcast_to(a, (system.N,)).copy()
+        self.measure = measure
+
+    def landau(self, s, idx=slice(None)):
+        return self.a[idx] * s**2 + self.b[idx] * s**4
+
+    def energy(self, M):
+        return self.sys.energy(M) + float(np.sum(self.landau(np.linalg.norm(M, axis=1))))
+
+    def sweep(self, M):
+        beta = 1.0 / (K_B * self.T) if self.T > 0 else np.inf
+        flat = M.reshape(-1)
+        for idx, Jc, A, mu in self.groups:
+            h = (Jc @ flat).reshape(-1, 3)
+            Mo = M[idx]
+            Mn = Mo + self.sigma * self.rng.normal(size=Mo.shape)
+            dM = Mn - Mo
+            so, sn = np.linalg.norm(Mo, axis=1), np.linalg.norm(Mn, axis=1)
+            dE = -2.0 * np.einsum("ij,ij->i", dM, h) - MU_B * mu * (dM @ self.sys.B)
+            if self.sys.has_A:
+                dE += np.einsum("ia,iab,ib->i", Mn, A, Mn) - np.einsum("ia,iab,ib->i", Mo, A, Mo)
+            dE += self.landau(sn, idx) - self.landau(so, idx)
+            lw = -np.clip(dE * beta, -700, 700)
+            if self.measure == "dsdOmega":
+                lw += 2 * np.log(np.maximum(so, 1e-300) / np.maximum(sn, 1e-300))
+            acc = np.log(self.rng.random(len(idx)) + 1e-300) < lw
+            M[idx[acc]] = Mn[acc]
+            self.accepted += int(acc.sum())
+            self.tried += len(idx)
+        return M

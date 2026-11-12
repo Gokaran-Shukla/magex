@@ -26,7 +26,7 @@ import numpy as np
 from .constants import E_CHARGE, HBAR, MU0
 from .mesh import Mesh
 
-PARAMS = ("Ms", "A", "D_int", "D_bulk", "Ku1", "Ku2", "Kc1", "alpha")
+PARAMS = ("Ms", "A", "D_int", "D_bulk", "Ku1", "Ku2", "Kc1", "Kc2", "Kc3", "alpha", "B1", "B2")
 
 
 def _unit(v):
@@ -62,6 +62,12 @@ class Micromagnet:
         self.gb_scale = 1.0
         self.rkky = []                          # [(k1, k2, J1, J2)] interlayer coupling (J/m^2) across a spacer
         self.oersted = None                     # static Oersted field (nx,ny,nz,3), T
+        self.strain = None                      # (nx,ny,nz,6) or (6,) strain exx, eyy, ezz, exy, exz, eyz (magnetoelastic)
+        self.geom = None                        # (nx,ny,nz) volume fraction (edge smoothing; demag only)
+        self.frozen = None                      # (nx,ny,nz) bool: spins held fixed (mumax3 FrozenSpins)
+        self.inter_dmi = {}                     # {(r1, r2): D (J/m^2)} interfacial DMI across region boundaries
+        self.custom_fields = []                 # callables (m, t, sys) -> B (T); energy as Zeeman-like (or None)
+        self.custom_energies = []               # callables (m, sys) -> energy density (J/m^3); field by differentiation
         self.use_demag = bool(demag)
         self.workers = workers
         self._demag = None
@@ -72,7 +78,8 @@ class Micromagnet:
 
     # ------------------------------------------------------------------ set-up
     def add_region(self, mask, name="region", Ms=0.0, A=0.0, D=0.0, dmi="interfacial", Ku1=0.0, Ku2=0.0,
-                   anisU=(0, 0, 1), Kc1=0.0, anisC1=(1, 0, 0), anisC2=(0, 1, 0), alpha=0.02, **_):
+                   anisU=(0, 0, 1), Kc1=0.0, anisC1=(1, 0, 0), anisC2=(0, 1, 0), alpha=0.02, Kc2=0.0, Kc3=0.0,
+                   B1=0.0, B2=0.0, frozen=False, **_):
         """Assign a material to the cells in mask (later regions override earlier ones)."""
         mask = np.asarray(mask, bool)
         rid = len(self.region_names)
@@ -85,6 +92,13 @@ class Micromagnet:
         self.Ku1[mask] = Ku1
         self.Ku2[mask] = Ku2
         self.Kc1[mask] = Kc1
+        self.Kc2[mask] = Kc2
+        self.Kc3[mask] = Kc3
+        self.B1[mask] = B1
+        self.B2[mask] = B2
+        if frozen:
+            self.frozen = np.zeros(self.mesh.n, bool) if self.frozen is None else self.frozen
+            self.frozen[mask] = True
         self.alpha[mask] = alpha
         self.anisU[mask] = _unit(anisU)
         c1 = _unit(anisC1)
@@ -206,10 +220,13 @@ class Micromagnet:
             lap += self.exchange_axis_scale[axis] * (Ap[..., None] * (p - m) + Aq[..., None] * (q - m)) / d2
             grad.append((p - q) / (2 * self.mesh.d[axis]))
         F["exchange"] = 2 * inv * lap
-        if np.any(self.D_int):
-            gx, gy = grad[0], grad[1]
+        if np.any(self.D_int) or self.inter_dmi:
+            # spatially varying D: link constants (energy-consistent); uniform D: cell value
+            Dm = self.D_int[self.magnetic]
+            link = bool(self.inter_dmi) or (Dm.size and float(Dm.max() - Dm.min()) > 0)
+            gx, gy = (self._dmi_link_gradients(m, st)[:2] if link else grad[:2])
             Bd = np.stack([gx[..., 2], gy[..., 2], -gx[..., 0] - gy[..., 1]], -1)
-            F["dmi"] = 2 * (self.D_int * inv[..., 0])[..., None] * Bd
+            F["dmi"] = 2 * (inv[..., 0] if link else self.D_int * inv[..., 0])[..., None] * Bd
         if np.any(self.D_bulk):
             gx, gy, gz = grad
             curl = np.stack([gy[..., 2] - gz[..., 1], gz[..., 0] - gx[..., 2], gx[..., 1] - gy[..., 0]], -1)
@@ -225,8 +242,37 @@ class Micromagnet:
             pre = (-2 * self.Kc1 * inv[..., 0])[..., None]
             F["cubic"] = pre * ((a1 * (a2**2 + a3**2))[..., None] * c1 + (a2 * (a1**2 + a3**2))[..., None] * c2
                                 + (a3 * (a1**2 + a2**2))[..., None] * c3)
+        if np.any(self.Kc2) or np.any(self.Kc3):
+            c1, c2 = self.anisC1, self.anisC2
+            c3 = np.cross(c1, c2)
+            a1, a2, a3 = (np.einsum("...a,...a->...", m, c) for c in (c1, c2, c3))
+            q1, q2, q3 = a1**2, a2**2, a3**2
+            if np.any(self.Kc2):                                  # E = Kc2 a1^2 a2^2 a3^2
+                pre = (-2 * self.Kc2 * inv[..., 0])[..., None]
+                F["cubic2"] = pre * ((a1 * q2 * q3)[..., None] * c1 + (a2 * q1 * q3)[..., None] * c2
+                                     + (a3 * q1 * q2)[..., None] * c3)
+            if np.any(self.Kc3):                                  # E = Kc3 (a1^2 a2^2 + a2^2 a3^2 + a3^2 a1^2)^2
+                s_ = q1 * q2 + q2 * q3 + q3 * q1
+                pre = (-4 * self.Kc3 * s_ * inv[..., 0])[..., None]
+                F["cubic3"] = pre * ((a1 * (q2 + q3))[..., None] * c1 + (a2 * (q1 + q3))[..., None] * c2
+                                     + (a3 * (q1 + q2))[..., None] * c3)
+        if self.strain is not None and (np.any(self.B1) or np.any(self.B2)):
+            eps = np.broadcast_to(np.asarray(self.strain, float), self.mesh.n + (6,))
+            exx, eyy, ezz, exy, exz, eyz = (eps[..., k] for k in range(6))
+            mx, my, mz = m[..., 0], m[..., 1], m[..., 2]
+            b1, b2 = self.B1, self.B2
+            F["magnetoelastic"] = (-2 * inv[..., 0])[..., None] * np.stack([
+                b1 * exx * mx + b2 * (exy * my + exz * mz),
+                b1 * eyy * my + b2 * (exy * mx + eyz * mz),
+                b1 * ezz * mz + b2 * (exz * mx + eyz * my)], -1)
+        for fn in self.custom_energies:
+            F.setdefault("custom", 0)
+            F["custom"] = F["custom"] + self._custom_energy_field(fn, m, inv)
+        for fn in self.custom_fields:
+            F["custom_field"] = F.get("custom_field", 0) + np.asarray(fn(m, self.t if t is None else t, self), float)
         if self.use_demag:
-            F["demag"] = MU0 * self.demag.field(Ms[..., None] * m)
+            Mfull = Ms[..., None] * m if self.geom is None else (Ms * self.geom)[..., None] * m
+            F["demag"] = MU0 * self.demag.field(Mfull)
         Bz = self.B_ext.copy()
         if self.B_func is not None:
             Bz = Bz + np.asarray(self.B_func(self.t if t is None else t), float)
@@ -253,6 +299,42 @@ class Micromagnet:
             F[k] = np.where(mag, F[k], 0.0)
         return F
 
+    def _custom_energy_field(self, fn, m, inv, h=1e-6):
+        B = np.zeros_like(m)
+        for a in range(3):
+            mp = m.copy()
+            mp[..., a] += h
+            mm_ = m.copy()
+            mm_[..., a] -= h
+            B[..., a] = -(fn(mp, self) - fn(mm_, self)) / (2 * h)
+        return B * inv
+
+    def _dmi_link_gradients(self, m, st):
+        """D-weighted central differences (D_link+ m_+ - D_link- m_-)/(2d) with link DMI constants:
+        arithmetic mean of the two cells, overridden by inter_dmi for region pairs."""
+        out = []
+        for axis, (p, Ap, q, Aq) in enumerate(st):
+            if Ap is None:
+                out.append(np.zeros_like(m))
+                continue
+            g = 0
+            for step, nb in ((+1, p), (-1, q)):
+                Dn = np.roll(self.D_int, -step, axis=axis)
+                rn = np.roll(self.region, -step, axis=axis)
+                Dl = 0.5 * (self.D_int + Dn)
+                exists = np.roll(self.Ms, -step, axis=axis) > 0
+                if not self.mesh.pbc[axis]:
+                    edge = [slice(None)] * 3
+                    edge[axis] = -1 if step > 0 else 0
+                    exists[tuple(edge)] = False
+                Dl = np.where(exists, Dl, self.D_int)            # ghost links keep the cell's own D
+                for (r1, r2), Dv in self.inter_dmi.items():
+                    sel = ((self.region == r1) & (rn == r2)) | ((self.region == r2) & (rn == r1))
+                    Dl = np.where(sel & exists, Dv, Dl)
+                g = g + step * Dl[..., None] * nb
+            out.append(g / (2 * self.mesh.d[axis]))
+        return out
+
     def sot_field(self, m):
         if not self.sot:
             return 0.0
@@ -278,8 +360,8 @@ class Micromagnet:
         return B
 
     # ------------------------------------------------------------------ energies (J)
-    _FACTOR = {"exchange": 0.5, "dmi": 0.5, "anisotropy": None, "cubic": 0.25, "demag": 0.5, "zeeman": 1.0,
-               "rkky": None}
+    _FACTOR = {"exchange": 0.5, "dmi": 0.5, "anisotropy": None, "cubic": 0.25, "cubic2": 1 / 6, "cubic3": 1 / 8,
+               "demag": 0.5, "zeeman": 1.0, "rkky": None, "magnetoelastic": 0.5, "custom": None, "custom_field": 1.0}
 
     def energies(self, m, F=None):
         F = F or self.fields(m)
@@ -291,6 +373,10 @@ class Micromagnet:
                 mu = np.einsum("...a,...a->...", m, self.anisU)
                 e = -(self.Ku1 * mu**2 + self.Ku2 * mu**4)
                 E[k] = float(np.sum(e[self.magnetic]) * V)
+            elif k == "custom":
+                E[k] = float(sum(np.sum(fn(m, self)[self.magnetic]) for fn in self.custom_energies) * V)
+            elif k == "demag" and self.geom is not None:
+                E[k] = float(-0.5 * np.sum(dens * self.geom) * V)
             elif k == "rkky":
                 dA = self.mesh.d[0] * self.mesh.d[1]
                 Er = 0.0

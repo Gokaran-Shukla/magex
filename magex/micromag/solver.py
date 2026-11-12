@@ -38,6 +38,9 @@ def llg_rhs(system, m, t, precession=True, thermal=None):
     if stt and stt.get("type", "zhang-li") == "zhang-li":
         from .stt import stt_rhs
         out = out + stt_rhs(system, m, t)
+    fr = getattr(system, "frozen", None)
+    if fr is not None:
+        out = np.where(fr[..., None], 0.0, out)
     return out, B
 
 
@@ -76,8 +79,18 @@ _B5 = [35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84, 0]
 _B4 = [5179 / 57600, 0, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40]
 
 
+# Bogacki-Shampine 3(2), FSAL (mumax3 "RK23")
+_TAB = {"rk45": (_C, _A, _B5, _B4, 5),
+        "rk23": ([0, 1 / 2, 3 / 4, 1], [[], [1 / 2], [0, 3 / 4], [2 / 9, 1 / 3, 4 / 9]],
+                 [2 / 9, 1 / 3, 4 / 9, 0], [7 / 24, 1 / 4, 1 / 3, 1 / 8], 3)}
+
+
 class RK45:
-    def __init__(self, system, tol=1e-5, dt=1e-13, dt_min=1e-16, dt_max=5e-12, precession=True):
+    """Adaptive embedded Runge-Kutta: method = "rk45" (Dormand-Prince, default) or "rk23" (Bogacki-Shampine)."""
+
+    def __init__(self, system, tol=1e-5, dt=1e-13, dt_min=1e-16, dt_max=5e-12, precession=True, method="rk45"):
+        self.C, self.A, self.Bh, self.Bl, self.order = _TAB[method]
+        self.method = method
         self.sys = system
         self.tol = tol
         self.dt = dt
@@ -99,18 +112,19 @@ class RK45:
         while sysm.t < tend - 1e-21 and self.nsteps < max_steps:
             dt = min(self.dt, tend - sysm.t)
             ks = [k1]
-            for s in range(1, 7):
-                ms = m + dt * sum(a * k for a, k in zip(_A[s], ks))
+            ns = len(self.C)
+            for s in range(1, ns):
+                ms = m + dt * sum(a * k for a, k in zip(self.A[s], ks))
                 ms = sysm.normalize(ms)
-                k, Bs = llg_rhs(sysm, ms, sysm.t + _C[s] * dt, self.precession)
+                k, Bs = llg_rhs(sysm, ms, sysm.t + self.C[s] * dt, self.precession)
                 ks.append(k)
-            m5 = sysm.normalize(m + dt * sum(b * k for b, k in zip(_B5, ks)))
-            m4 = m + dt * sum(b * k for b, k in zip(_B4, ks))
+            m5 = sysm.normalize(m + dt * sum(b * k for b, k in zip(self.Bh, ks)))
+            m4 = m + dt * sum(b * k for b, k in zip(self.Bl, ks))
             err = float(np.max(np.linalg.norm(m5 - sysm.normalize(m4), axis=-1)))
             if err <= self.tol or dt <= self.dt_min:
                 sysm.t += dt
                 m = m5
-                k1, B = ks[6], Bs                    # FSAL: stage 7 is evaluated at (t+dt, m5)
+                k1, B = ks[-1], Bs                   # FSAL: last stage is evaluated at (t+dt, m_high)
                 self.nsteps += 1
                 rec(sysm.t, m, B)
                 if stop_torque is not None:
@@ -119,7 +133,7 @@ class RK45:
                         break
             else:
                 self.nreject += 1
-            fac = 0.9 * (self.tol / max(err, 1e-30)) ** 0.2
+            fac = 0.9 * (self.tol / max(err, 1e-30)) ** (1.0 / self.order)
             self.dt = float(np.clip(dt * np.clip(fac, 0.2, 5.0), self.dt_min, self.dt_max))
             if log and time.time() - lastlog > 15:
                 lastlog = time.time()
@@ -134,9 +148,11 @@ class RK45:
 
 
 class Heun:
-    """Fixed-step stochastic Heun integrator (finite temperature)."""
+    """Fixed-step integrators: method = "heun" (stochastic Heun, finite temperature), "euler", "rk4"
+    (deterministic; the thermal field is frozen during a step), "rk2" (midpoint)."""
 
-    def __init__(self, system, dt=1e-14, temperature=0.0, seed=None, precession=True):
+    def __init__(self, system, dt=1e-14, temperature=0.0, seed=None, precession=True, method="heun"):
+        self.method = method
         self.sys = system
         self.dt = dt
         self.T = temperature
@@ -153,6 +169,8 @@ class Heun:
         return np.where(s.magnetic[..., None], b, 0.0)
 
     def run(self, m, duration, record_every=None, callback=None, log=None):
+        if self.method != "heun":
+            return self._run_fixed(m, duration, record_every, callback, log)
         s = self.sys
         n = int(round(duration / self.dt))
         rec = _Recorder(s, record_every or duration / 100, callback)
@@ -172,6 +190,49 @@ class Heun:
         if log:
             log(f"    Heun: {n} steps at T = {self.T} K in {time.time() - wall:.1f} s")
         return m, np.array(rec.rows)
+
+
+def _fixed_step(self, m, duration, record_every=None, callback=None, log=None):
+    s = self.sys
+    n = int(round(duration / self.dt))
+    rec = _Recorder(s, record_every or duration / 100, callback)
+    wall = time.time()
+    dt = self.dt
+    for k in range(n):
+        b = self.thermal()
+        t = s.t
+        k1, B = llg_rhs(s, m, t, self.precession, b)
+        if k == 0:
+            rec(t, m, B, force=True)
+        if self.method == "euler":
+            m = s.normalize(m + dt * k1)
+        elif self.method == "rk2":
+            k2, _ = llg_rhs(s, s.normalize(m + 0.5 * dt * k1), t + 0.5 * dt, self.precession, b)
+            m = s.normalize(m + dt * k2)
+        elif self.method == "rk4":
+            k2, _ = llg_rhs(s, s.normalize(m + 0.5 * dt * k1), t + 0.5 * dt, self.precession, b)
+            k3, _ = llg_rhs(s, s.normalize(m + 0.5 * dt * k2), t + 0.5 * dt, self.precession, b)
+            k4, _ = llg_rhs(s, s.normalize(m + dt * k3), t + dt, self.precession, b)
+            m = s.normalize(m + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4))
+        else:
+            raise ValueError(f"unknown fixed-step method '{self.method}'")
+        s.t += dt
+        rec(s.t, m, B)
+    _, B = llg_rhs(s, m, s.t, self.precession)
+    rec(s.t, m, B, force=True)
+    if log:
+        log(f"    {self.method}: {n} steps in {time.time() - wall:.1f} s")
+    return m, np.array(rec.rows)
+
+
+Heun._run_fixed = _fixed_step
+
+
+def make_solver(system, method="rk45", tol=1e-5, dt=None, temperature=0.0, seed=1):
+    """Solver factory (mumax3 SetSolver): rk45 | rk23 (adaptive), heun | rk4 | rk2 | euler (fixed dt)."""
+    if method in ("rk45", "rk23"):
+        return RK45(system, tol=tol, method=method)
+    return Heun(system, dt=dt or 1e-14, temperature=temperature, seed=seed, method=method)
 
 
 def minimize(system, m, tol=1e-5, max_iter=50000, log=None):

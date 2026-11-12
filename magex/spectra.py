@@ -138,6 +138,9 @@ def run_sqw_config(cfg, base=".", log=print):
     L = sm.get("supercell", [24, 24, 1])
     system = SpinSystem(uc, L, sm.get("pbc", [True, True, True]), c["field"])
     log(system.summary())
+    if cfg.get("structure"):
+        from .structure import apply_structure
+        apply_structure(system, cfg["structure"], log)
     labels = list(c["path"]) if isinstance(c["path"], str) else list(c["path"])
     special = c["special_points"] or dict(G=[0, 0, 0], X=[0.5, 0, 0], M=[0.5, 0.5, 0], K=[1 / 3, 1 / 3, 0],
                                          R=[0.5, 0.5, 0.5], Y=[0, 0.5, 0], Z=[0, 0, 0.5])

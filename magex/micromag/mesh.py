@@ -59,10 +59,25 @@ def geometry_mask(mesh: Mesh, shape="rectangle", **p):
             png (path, threshold, invert): dark pixels = magnetic, image stretched over the xy extent
     common: center_nm=[x,y], z_layers=[k0,k1] (inclusive cell range), rotate_deg
     """
+    if shape in ("union", "intersect", "xor", "difference"):
+        subs = [geometry_mask(mesh, **dict(q)) for q in p["shapes"]]
+        m = subs[0].copy()
+        for q in subs[1:]:
+            m = {"union": m | q, "intersect": m & q, "xor": m ^ q, "difference": m & ~q}[shape]
+        return m
+    if "fraction" in p:
+        raise ValueError("use volume_fraction() for edge smoothing")
     X, Y, Z = mesh.coords()
     nm = 1e-9
-    cx, cy = (np.array(p.get("center_nm", [0, 0]), float) * nm)
-    x, y = X - cx, Y - cy
+    c = np.array(p.get("center_nm", [0, 0]), float) * nm
+    cx, cy = c[0], c[1]
+    cz = c[2] if len(c) > 2 else 0.0
+    x, y, z = X - cx, Y - cy, Z - cz
+    if p.get("rotate_x_deg") or p.get("rotate_y_deg"):
+        ax_ = np.deg2rad(p.get("rotate_x_deg", 0.0))
+        ay_ = np.deg2rad(p.get("rotate_y_deg", 0.0))
+        y, z = np.cos(ax_) * y + np.sin(ax_) * z, -np.sin(ax_) * y + np.cos(ax_) * z
+        x, z = np.cos(ay_) * x - np.sin(ay_) * z, np.sin(ay_) * x + np.cos(ay_) * z
     if p.get("rotate_deg"):
         t = np.deg2rad(p["rotate_deg"])
         x, y = np.cos(t) * x + np.sin(t) * y, -np.sin(t) * x + np.cos(t) * y
@@ -72,6 +87,21 @@ def geometry_mask(mesh: Mesh, shape="rectangle", **p):
             m = (np.abs(x) <= lx / 2 + 1e-15) & (np.abs(y) <= ly / 2 + 1e-15)
         else:
             m = np.ones(mesh.n, bool)
+    elif shape == "sphere":
+        m = x**2 + y**2 + z**2 <= (p["diameter_nm"] * nm / 2) ** 2 * (1 + 1e-12)
+    elif shape == "cylinder":
+        m = (x**2 + y**2 <= (p["diameter_nm"] * nm / 2) ** 2 * (1 + 1e-12)) & \
+            (np.abs(z) <= p.get("height_nm", 1e9) * nm / 2 + 1e-15)
+    elif shape == "cuboid":
+        lx, ly, lz = np.array(p["size_nm"], float) * nm
+        m = (np.abs(x) <= lx / 2 + 1e-15) & (np.abs(y) <= ly / 2 + 1e-15) & (np.abs(z) <= lz / 2 + 1e-15)
+    elif shape == "ellipsoid":
+        a, b, cc = np.array(p["diameters_nm"], float) * nm / 2
+        m = (x / a) ** 2 + (y / b) ** 2 + (z / cc) ** 2 <= 1 + 1e-12
+    elif shape == "cone":
+        h = p["height_nm"] * nm
+        r = p["diameter_nm"] * nm / 2 * np.clip(0.5 - z / h, 0, 1)     # base at z = -h/2, apex at +h/2
+        m = (x**2 + y**2 <= r**2) & (np.abs(z) <= h / 2)
     elif shape == "disk":
         r = p["diameter_nm"] * nm / 2
         m = x**2 + y**2 <= r**2 * (1 + 1e-12)
@@ -109,3 +139,17 @@ def geometry_mask(mesh: Mesh, shape="rectangle", **p):
             sub = dict(sub)
             m &= ~geometry_mask(mesh, sub.pop("shape"), **sub)
     return m
+
+
+def volume_fraction(mesh: Mesh, shape, samples=4, **p):
+    """Fraction (0..1) of every cell inside the shape from samples^3 sub-cell points (mumax3 EdgeSmooth)."""
+    acc = np.zeros(mesh.n)
+    off = (np.arange(samples) + 0.5) / samples - 0.5
+    for ox in off:
+        for oy in off:
+            for oz in (off if mesh.n[2] > 1 else [0.0]):
+                q = dict(p)
+                c = list(np.array(q.get("center_nm", [0, 0, 0]), float)) + [0.0] * 3
+                q["center_nm"] = [c[0] - ox * mesh.d[0] * 1e9, c[1] - oy * mesh.d[1] * 1e9, c[2] - oz * mesh.d[2] * 1e9]
+                acc += geometry_mask(mesh, shape, **q)
+    return acc / (samples**2 * (samples if mesh.n[2] > 1 else 1))
