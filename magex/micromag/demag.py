@@ -123,12 +123,12 @@ class Demag:
     def field(self, M):
         """H (A/m), shape (nx,ny,nz,3), for magnetisation M = Ms m (A/m)."""
         n = self.mesh.n
-        Mk = [sfft.rfftn(M[..., c], s=self.fshape, axes=(0, 1, 2), workers=self.workers) for c in range(3)]
+        kw = {} if self.workers is None else dict(workers=self.workers)
+        Mk = [sfft.rfftn(M[..., c], s=self.fshape, axes=(0, 1, 2), **kw) for c in range(3)]
         xx, yy, zz, xy, xz, yz = self.K
         Hk = (xx * Mk[0] + xy * Mk[1] + xz * Mk[2],
               xy * Mk[0] + yy * Mk[1] + yz * Mk[2],
               xz * Mk[0] + yz * Mk[1] + zz * Mk[2])
-        H = np.empty(n + (3,))
-        for c in range(3):
-            H[..., c] = -sfft.irfftn(Hk[c], s=self.fshape, axes=(0, 1, 2), workers=self.workers)[:n[0], :n[1], :n[2]]
-        return H
+        kw = {} if self.workers is None else dict(workers=self.workers)
+        comps = [-sfft.irfftn(Hk[c], s=self.fshape, axes=(0, 1, 2), **kw)[:n[0], :n[1], :n[2]] for c in range(3)]
+        return np.stack(comps, axis=-1)

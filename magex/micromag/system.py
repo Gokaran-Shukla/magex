@@ -48,6 +48,7 @@ class Micromagnet:
         self.anisC2 = np.zeros(sh + (3,))
         self.anisC2[..., 1] = 1.0
         self.region = np.full(sh, -1, int)
+        self.xp = np                            # array module (numpy, or cupy after to_gpu())
         self.region_names = []
         self.B_ext = np.zeros(3)
         self.B_ext_cell = None                  # optional (nx,ny,nz,3) static non-uniform field
@@ -109,7 +110,8 @@ class Micromagnet:
 
     def normalize(self, m):
         n = np.linalg.norm(m, axis=-1, keepdims=True)
-        out = np.divide(m, n, out=np.zeros_like(m), where=n > 0)
+        xp = self.xp
+        out = xp.where(n > 0, m / xp.where(n > 0, n, 1.0), 0.0)
         out[~self.magnetic] = 0.0
         return out
 
@@ -168,8 +170,10 @@ class Micromagnet:
             if chiral:
                 n = np.zeros(3)
                 n[axis] = step
+                n = self.xp.asarray(n)
                 mn = m[..., axis:axis + 1] * step
-                dmdn = ci * (mn * np.array([0, 0, 1.0]) - m[..., 2:3] * n) + cb * np.cross(n, m)
+                zh = self.xp.asarray([0, 0, 1.0])
+                dmdn = ci * (mn * zh - m[..., 2:3] * n) + cb * self.xp.cross(n, m)
                 ghost = m + mesh.d[axis] * dmdn
             else:
                 ghost = m
@@ -188,7 +192,8 @@ class Micromagnet:
     def fields(self, m, t=None, terms=None):
         """Dict of the effective-field contributions (T), each (nx,ny,nz,3)."""
         Ms = self.Ms
-        inv = np.divide(1.0, Ms, out=np.zeros_like(Ms), where=Ms > 0)[..., None]
+        xp = self.xp
+        inv = xp.where(Ms > 0, 1.0 / xp.where(Ms > 0, Ms, 1.0), 0.0)[..., None]
         st = self._stencil(m)
         F = {}
         lap = np.zeros_like(m)
@@ -225,11 +230,11 @@ class Micromagnet:
         Bz = self.B_ext.copy()
         if self.B_func is not None:
             Bz = Bz + np.asarray(self.B_func(self.t if t is None else t), float)
-        Bzee = np.broadcast_to(Bz, m.shape).copy()
+        Bzee = xp.broadcast_to(xp.asarray(Bz), m.shape).copy()
         if self.B_ext_cell is not None:
             Bzee = Bzee + self.B_ext_cell
         for mask, fn in self.B_local:
-            Bzee = Bzee + mask[..., None] * np.asarray(fn(self.t if t is None else t), float)
+            Bzee = Bzee + xp.asarray(mask)[..., None] * xp.asarray(np.asarray(fn(self.t if t is None else t), float))
         if self.oersted is not None:
             Bzee = Bzee + self.oersted
         F["zeeman"] = Bzee
@@ -240,7 +245,7 @@ class Micromagnet:
                 m1, m2 = m[:, :, k1], m[:, :, k2]
                 d12 = np.einsum("...a,...a->...", m1, m2)[..., None]
                 for ka, mo, Msa in ((k1, m2, Ms[:, :, k1]), (k2, m1, Ms[:, :, k2])):
-                    inv = np.divide(1.0, Msa, out=np.zeros_like(Msa), where=Msa > 0)[..., None]
+                    inv = xp.where(Msa > 0, 1.0 / xp.where(Msa > 0, Msa, 1.0), 0.0)[..., None]
                     Br[:, :, ka] += (J1 + 2 * J2 * d12) * mo * inv / dz
             F["rkky"] = Br
         mag = self.magnetic[..., None]
@@ -252,18 +257,19 @@ class Micromagnet:
         if not self.sot:
             return 0.0
         s = self.sot
-        sigma = _unit(s.get("sigma", [0, 1, 0]))
+        xp = self.xp
+        sigma = xp.asarray(_unit(s.get("sigma", [0, 1, 0])))
         t_fm = s.get("thickness", self.mesh.n[2] * self.mesh.d[2])
         Ms = self.Ms
-        inv = np.divide(1.0, Ms, out=np.zeros_like(Ms), where=Ms > 0)
+        inv = xp.where(Ms > 0, 1.0 / xp.where(Ms > 0, Ms, 1.0), 0.0)
         bdl = HBAR * s.get("theta", 0.1) * s.get("J", 0.0) / (2 * E_CHARGE * t_fm) * inv
         if callable(s.get("J_func")):
             bdl = bdl * s["J_func"](self.t)
         if "pulse_ns" in s:                       # [t0, width] in ns: current on only inside the window
             t0, w = s["pulse_ns"]
             if not (t0 * 1e-9 <= self.t < (t0 + w) * 1e-9):
-                return np.zeros(m.shape)
-        B = bdl[..., None] * np.cross(m, sigma) + (s.get("fl_ratio", 0.0) * bdl)[..., None] * sigma
+                return xp.zeros(m.shape)
+        B = bdl[..., None] * xp.cross(m, sigma) + (s.get("fl_ratio", 0.0) * bdl)[..., None] * sigma
         return np.where(self.magnetic[..., None], B, 0.0)
 
     def effective_field(self, m, t=None):
@@ -301,7 +307,18 @@ class Micromagnet:
     def average(self, m):
         mag = self.magnetic
         w = self.Ms[mag]
-        return (m[mag] * w[:, None]).sum(0) / w.sum()
+        out = (m[mag] * w[:, None]).sum(0) / w.sum()
+        return out.get() if hasattr(out, "get") else out
+
+    # ------------------------------------------------------------------ GPU
+    def to_gpu(self):
+        """Move all arrays to the GPU (CuPy).  Pass m = cupy.asarray(m) to the solvers afterwards."""
+        from .gpu import to_gpu
+        return to_gpu(self)
+
+    def to_cpu(self):
+        from .gpu import to_cpu
+        return to_cpu(self)
 
     def torque(self, m, B=None):
         B = self.effective_field(m) if B is None else B

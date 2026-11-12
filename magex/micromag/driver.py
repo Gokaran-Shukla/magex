@@ -169,10 +169,31 @@ def run_micromag_config(cfg, base=".", log=print):
     plot_state(sysm, m, os.path.join(outdir, "m_initial.png"), title="initial state")
     summary = dict(stages=[])
     stages = cfg.get("stage") or [dict(type="relax")]
+    ckpt = os.path.join(outdir, "checkpoint.npz")
+    done_stage, resume = -1, None
+    if oc.get("restart") and os.path.exists(ckpt):       # [output] restart = true
+        z = np.load(ckpt, allow_pickle=True)
+        m = z["m"]
+        sysm.t = float(z["t"])
+        done_stage = int(z["stage_done"])
+        resume = dict(stage=int(z["stage_running"]), t0=float(z["t_stage_start"])) if int(z["stage_running"]) >= 0 else None
+        if "summary" in z.files:
+            summary = json.loads(str(z["summary"]))
+        log(f"restart from {ckpt}: stages 0..{done_stage} done, t = {sysm.t * 1e9:.4f} ns"
+            + (f", resuming stage {resume['stage']}" if resume else ""))
+
+    def save_ckpt(stage_done, mm, running=-1, t_start=0.0):
+        np.savez_compressed(ckpt, m=np.asarray(mm.get() if hasattr(mm, "get") else mm), t=sysm.t,
+                            stage_done=stage_done, stage_running=running, t_stage_start=t_start,
+                            summary=json.dumps(summary, default=float))
     for k, st in enumerate(stages):
         st = dict(st)
         typ = st["type"]
         tag = f"{k:02d}_{typ}"
+        if k <= done_stage:
+            if "B" in st:
+                sysm.set_field(st["B"])
+            continue
         log(f"stage {k}: {typ} {({a: b for a, b in st.items() if a != 'type'})}")
         if "B" in st:
             sysm.set_field(st["B"])
@@ -205,8 +226,25 @@ def run_micromag_config(cfg, base=".", log=print):
                     track.append([t, *texture_center(sysm, mm)])
                     if cb0:
                         cb0(t, mm)
+            t_stage = sysm.t
+            duration = st["time_ns"] * 1e-9
+            if resume and resume["stage"] == k:
+                t_stage = resume["t0"]
+                duration = max(duration - (sysm.t - t_stage), 0.0)
+                log(f"    resuming: {duration * 1e9:.4f} ns left")
+            if st.get("checkpoint_ps"):
+                every = st["checkpoint_ps"] * 1e-12
+                nxt = [sysm.t + every]
+                cb1 = cb
+
+                def cb(t, mm, cb1=cb1, nxt=nxt, k=k, t_stage=t_stage):
+                    if t >= nxt[0]:
+                        save_ckpt(k - 1, mm, k, t_stage)
+                        nxt[0] += every
+                    if cb1:
+                        cb1(t, mm)
             solver = RK45(sysm, tol=st.get("tol", 1e-5))
-            m, table = solver.run(m, st["time_ns"] * 1e-9, rec, cb, log=log)
+            m, table = solver.run(m, duration, rec, cb, log=log)
             if getattr(sysm, "spin_pumping", None):
                 from .fp_torques import ishe_voltage, pumped_spin_current
                 sp = sysm.spin_pumping
@@ -283,6 +321,7 @@ def run_micromag_config(cfg, base=".", log=print):
         E = sysm.energies(m)
         info.update(m=sysm.average(m).tolist(), Q=Q, energies_J=E)
         summary["stages"].append(info)
+        save_ckpt(k, m)
         log(f"    <m> = {np.round(sysm.average(m), 4).tolist()}   Q = {Q:+.3f}   E = {E['total']:.4e} J")
     with open(os.path.join(outdir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=1)

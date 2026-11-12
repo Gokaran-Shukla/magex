@@ -33,6 +33,8 @@
   exchange), parameter maps from .npy/OVF
 - Monte Carlo methods: parallel tempering (replica exchange) and Wang-Landau (1/t, numba kernel)
   with density of states, entropy and free energy; `method = ...` in [mc]
+- micromagnetic checkpoint/restart (`checkpoint_ps`, `[output] restart = true`); experimental CuPy GPU
+  backend (`Micromagnet.to_gpu()`, self-check `python -m magex.micromag.gpu`)
 
 ## 0.2.0 (2026-11-12)
 
