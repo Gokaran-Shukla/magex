@@ -152,7 +152,11 @@ def fmr(system, e, B_pulse=0.01, direction=(1, 0, 0), alpha=0.001, dt=2e-3, step
 
 def eigenmodes(system, e, nmodes=10):
     """Lowest Hessian eigenvalues (meV) and LLG eigenfrequencies (GHz) of a (relaxed) state (dense; N < ~3000)."""
-    from .htst import hessian, llg_frequencies
+    from .htst import hessian, llg_frequencies, llg_frequencies_sparse, lowest_modes
+    if system.N > 600:                      # sparse shift-invert (scales to ~10^5-10^6 spins)
+        ev, vec, basis = lowest_modes(system, e, nmodes)
+        f = llg_frequencies_sparse(system, e, nmodes)
+        return ev, f, vec, basis
     H, basis = hessian(system, e)
     ev, vec = np.linalg.eigh(H)
     f = llg_frequencies(system, e, H)

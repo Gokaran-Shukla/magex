@@ -352,6 +352,18 @@ def run_gneb_config(cfg, base=".", log=print):
     log(f"  barrier A -> B: {res['barrier_forward']:.6g} {ad.unit} = {res['barrier_forward'] / kT:.2f} k_B T at "
         f"{g['temperature']} K;  B -> A: {res['barrier_backward']:.6g} {ad.unit}")
     log(f"  Arrhenius lifetime of A (tau0 = {g['attempt_time']:g} s): 10^{res['log10_lifetime_s']:.2f} s")
+    if g.get("htst") and g["engine"] == "atomistic" and g["temperature"] > 0:
+        from .htst import htst_refined
+        try:
+            hr = htst_refined(system, neb.x[0], neb.x[res["saddle_image"]], g["temperature"], log=log)
+            res["htst_prefactor_Hz"] = hr["prefactor"]
+            res["htst_rate_Hz"] = hr["rate"]
+            res["htst_zero_modes"] = list(hr.get("n_zero", (0, 0)))
+            res["htst_lifetime_s"] = 1.0 / hr["rate"] if hr["rate"] > 0 else float("inf")
+            log(f"  HTST: prefactor {hr['prefactor']:.4g} Hz, zero modes (min, saddle) = {hr.get('n_zero', (0, 0))}, "
+                f"lifetime {res['htst_lifetime_s']:.4g} s at {g['temperature']} K")
+        except ValueError as err:
+            log(f"  HTST skipped: {err}")
     with open(os.path.join(outdir, "gneb.json"), "w") as f:
         json.dump(res, f, indent=1)
     if ad.unit == "J":
