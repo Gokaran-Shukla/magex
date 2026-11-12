@@ -129,10 +129,18 @@ class Quadruplets(_Term):
 
 
 class Dipolar(_Term):
-    """Exact dipole-dipole interaction by FFT on the supercell grid (per sublattice pair)."""
+    """Dipole-dipole interaction by FFT on the supercell grid (per sublattice pair).
+
+    Open axes: exact pair sum (zero padding).  Periodic axes: lattice sum over all image vectors inside a
+    sphere of radius R_c = images x (shortest periodic supercell length), so every image is counted once
+    whatever its offset representation.  For films (two periodic in-plane axes) the remaining tail of the
+    absolutely convergent 2D sum is added analytically (continuum sheets beyond R_c):
+        B_tail = (pi mu0 mu_B / 4 pi) (mu_t / A_cell R_c) (P_plane - 2 n n) . e_t   per layer,
+    which makes the error O(R_c^-3).  3D-periodic sums use spherical summation (vacuum boundary).
+    """
     long_range = True
 
-    def __init__(self, system, images=4, rcut_images=None):
+    def __init__(self, system, images=4, rcut_images=None, tail=True):
         self.sys = system
         L = np.array(system.L)
         ns = system.uc.nsites
@@ -148,25 +156,43 @@ class Dipolar(_Term):
             k = np.arange(M)
             offs.append(np.where(k <= M // 2, k, k - M) if system.pbc[a] else np.where(k < L[a], k, k - M))
         O = np.stack(np.meshgrid(*offs, indexing="ij"), -1).reshape(-1, 3)
-        imgs = [range(-images, images + 1) if system.pbc[a] else [0] for a in range(3)]
+        per = [a for a in range(3) if system.pbc[a]]
+        Rc = np.inf
+        if per:
+            Rc = float(images) * min(np.linalg.norm(L[a] * cell[a]) for a in per)
+        imgs = [range(-images - 1, images + 2) if system.pbc[a] else [0] for a in range(3)]
+        self.Rc = Rc
         self.K = {}
+        self.Wr = {}
+        tailT = None
+        if tail and len(per) == 2:
+            a1, a2 = (L[per[0]] * cell[per[0]]), (L[per[1]] * cell[per[1]])
+            nvec = np.cross(a1, a2)
+            area_cell = np.linalg.norm(np.cross(cell[per[0]], cell[per[1]]))
+            nvec /= np.linalg.norm(nvec)
+            tailT = DIP * np.pi / (area_cell * Rc) * (np.eye(3) - 3 * np.outer(nvec, nvec))
+            self.n_plane = int(L[per[0]] * L[per[1]])
         for s, t in itertools.product(range(ns), range(ns)):
             W = np.zeros((len(O), 3, 3))
             for p in itertools.product(*imgs):
-                R = (O + np.array(p) * L) @ cell + basis[t] - basis[s]
+                # convolution B_s(r) = sum_o W_st(o) M_t(r - o): source at r - o, so R = r_j - r_i = -o.cell + b_t - b_s
+                R = (-O + np.array(p) * L) @ cell + basis[t] - basis[s]
                 r = np.linalg.norm(R, axis=1)
-                ok = r > 1e-8
+                ok = (r > 1e-8) & (r <= Rc * (1 + 1e-12))
                 rh = np.zeros_like(R)
                 rh[ok] = R[ok] / r[ok, None]
                 inv3 = np.zeros_like(r)
                 inv3[ok] = 1.0 / r[ok] ** 3
                 W += DIP * inv3[:, None, None] * (3 * rh[:, :, None] * rh[:, None, :] - np.eye(3)[None])
             W = W.reshape(self.fshape + (3, 3))
+            if tailT is not None:            # far sheets of every layer: same weight for all in-plane offsets
+                W += tailT / self.n_plane
             for a in range(3):          # unused Nyquist offset of open axes
                 if not system.pbc[a] and self.fshape[a] > 1:
                     sl = [slice(None)] * 5
                     sl[a] = int(L[a])
                     W[tuple(sl)] = 0.0
+            self.Wr[(s, t)] = W
             self.K[(s, t)] = np.fft.rfftn(W, axes=(0, 1, 2))
         # full-grid bookkeeping (supports carved systems)
         self.grid = getattr(system, "grid_index", np.arange(system.N))
@@ -197,6 +223,16 @@ class Dipolar(_Term):
     def refresh(self, e):
         self._cache = self.field(e)
 
+    def self_tensor(self):
+        """(N,3,3) coupling of every site to its own periodic images (zero for open boundaries)."""
+        W0 = np.stack([self.Wr[(t, t)][0, 0, 0] for t in range(self.ns)])
+        return W0[self.sys.sublattice]
+
     def local_energy(self, idx, en, e):
+        """Energy of all dipolar pairs containing site idx[k] (incl. its own periodic images) with
+        e[idx[k]] -> en[k]; differences of this are exact single-site energy changes."""
         B = self._cache if self._cache is not None else self.field(e)
-        return -MU_B * self.sys.mu[idx] * np.einsum("ia,ia->i", en, B[idx])
+        mu = self.sys.mu[idx]
+        W0 = self.self_tensor()[idx]
+        Bo = B[idx] - mu[:, None] * np.einsum("iab,ib->ia", W0, e[idx])      # field of all other spins
+        return -MU_B * mu * np.einsum("ia,ia->i", en, Bo) - 0.5 * MU_B * mu**2 * np.einsum("ia,iab,ib->i", en, W0, en)

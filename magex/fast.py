@@ -423,6 +423,87 @@ if HAVE_NUMBA:
         return acc.sum()
 
 
+if HAVE_NUMBA:
+    @njit(parallel=True, cache=True)
+    def _dip_update(Bd, j, dx, dy, dz, cells, sub, cj0, cj1, cj2, sj, W, fx, fy, fz):
+        for k in prange(Bd.shape[0]):
+            o0 = (cells[k, 0] - cj0) % fx
+            o1 = (cells[k, 1] - cj1) % fy
+            o2 = (cells[k, 2] - cj2) % fz
+            sk = sub[k]
+            Bd[k, 0] += W[sk, sj, o0, o1, o2, 0, 0] * dx + W[sk, sj, o0, o1, o2, 0, 1] * dy + W[sk, sj, o0, o1, o2, 0, 2] * dz
+            Bd[k, 1] += W[sk, sj, o0, o1, o2, 1, 0] * dx + W[sk, sj, o0, o1, o2, 1, 1] * dy + W[sk, sj, o0, o1, o2, 1, 2] * dz
+            Bd[k, 2] += W[sk, sj, o0, o1, o2, 2, 0] * dx + W[sk, sj, o0, o1, o2, 2, 1] * dy + W[sk, sj, o0, o1, o2, 2, 2] * dz
+
+    @njit(cache=True)
+    def _dip_update_serial(Bd, j, dx, dy, dz, cells, sub, cj0, cj1, cj2, sj, W, fx, fy, fz):
+        for k in range(Bd.shape[0]):
+            o0 = (cells[k, 0] - cj0) % fx
+            o1 = (cells[k, 1] - cj1) % fy
+            o2 = (cells[k, 2] - cj2) % fz
+            sk = sub[k]
+            Bd[k, 0] += W[sk, sj, o0, o1, o2, 0, 0] * dx + W[sk, sj, o0, o1, o2, 0, 1] * dy + W[sk, sj, o0, o1, o2, 0, 2] * dz
+            Bd[k, 1] += W[sk, sj, o0, o1, o2, 1, 0] * dx + W[sk, sj, o0, o1, o2, 1, 1] * dy + W[sk, sj, o0, o1, o2, 1, 2] * dz
+            Bd[k, 2] += W[sk, sj, o0, o1, o2, 2, 0] * dx + W[sk, sj, o0, o1, o2, 2, 1] * dy + W[sk, sj, o0, o1, o2, 2, 2] * dz
+
+    @njit(cache=True)
+    def _mc_dipolar_sweep(e, Bd, st, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, pinned,
+                          beta, sigma, move, cells, sub, W, par):
+        """Exact single-spin Metropolis sweep with the full dipolar field kept up to date incrementally
+        (O(N) per accepted move): detailed balance holds exactly for the long-range interaction."""
+        N = e.shape[0]
+        fx, fy, fz = W.shape[2], W.shape[3], W.shape[4]
+        acc = 0
+        for i in range(N):
+            if pinned[i]:
+                continue
+            hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
+            zf = MU_B * mu[i]
+            si = sub[i]
+            W00, W01, W02 = W[si, si, 0, 0, 0, 0, 0], W[si, si, 0, 0, 0, 0, 1], W[si, si, 0, 0, 0, 0, 2]
+            W11, W12, W22 = W[si, si, 0, 0, 0, 1, 1], W[si, si, 0, 0, 0, 1, 2], W[si, si, 0, 0, 0, 2, 2]
+            ox, oy, oz = e[i, 0], e[i, 1], e[i, 2]
+            # field of all other spins (remove own periodic images)
+            bx = Bd[i, 0] - mu[i] * (W00 * ox + W01 * oy + W02 * oz)
+            by = Bd[i, 1] - mu[i] * (W01 * ox + W11 * oy + W12 * oz)
+            bz = Bd[i, 2] - mu[i] * (W02 * ox + W12 * oy + W22 * oz)
+            Hx = 2 * hx + zf * (B[0] + bx)
+            Hy = 2 * hy + zf * (B[1] + by)
+            Hz = 2 * hz + zf * (B[2] + bz)
+            r1 = max(_unif(st, 0), 1e-300)
+            r2 = _unif(st, 0)
+            r3 = max(_unif(st, 0), 1e-300)
+            r4 = _unif(st, 0)
+            g0 = np.sqrt(-2 * np.log(r1)) * np.cos(2 * np.pi * r2)
+            g1 = np.sqrt(-2 * np.log(r1)) * np.sin(2 * np.pi * r2)
+            g2 = np.sqrt(-2 * np.log(r3)) * np.cos(2 * np.pi * r4)
+            if move == 0:
+                nx, ny, nz = ox + sigma * g0, oy + sigma * g1, oz + sigma * g2
+            else:
+                nx, ny, nz = g0, g1, g2
+            q = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+            nx, ny, nz = nx * q, ny * q, nz * q
+            dx, dy, dz = nx - ox, ny - oy, nz - oz
+            self_n = nx * (W00 * nx + W01 * ny + W02 * nz) + ny * (W01 * nx + W11 * ny + W12 * nz) + \
+                nz * (W02 * nx + W12 * ny + W22 * nz)
+            self_o = ox * (W00 * ox + W01 * oy + W02 * oz) + oy * (W01 * ox + W11 * oy + W12 * oz) + \
+                oz * (W02 * ox + W12 * oy + W22 * oz)
+            dE = -(Hx * dx + Hy * dy + Hz * dz) - 0.5 * MU_B * mu[i] ** 2 * (self_n - self_o) + \
+                _onsite_E(i, nx, ny, nz, A, Kc, C, K2, K3, u, has_c, has_u) - \
+                _onsite_E(i, ox, oy, oz, A, Kc, C, K2, K3, u, has_c, has_u)
+            if dE <= 0 or _unif(st, 0) < np.exp(-min(dE * beta[i], 700.0)):
+                e[i, 0], e[i, 1], e[i, 2] = nx, ny, nz
+                m_ = mu[i]
+                if par:
+                    _dip_update(Bd, i, m_ * dx, m_ * dy, m_ * dz, cells, sub, cells[i, 0], cells[i, 1], cells[i, 2],
+                                si, W, fx, fy, fz)
+                else:
+                    _dip_update_serial(Bd, i, m_ * dx, m_ * dy, m_ * dz, cells, sub, cells[i, 0], cells[i, 1],
+                                       cells[i, 2], si, W, fx, fy, fz)
+                acc += 1
+        return acc
+
+
 def neighbour_blocks(Jsp, N):
     """(ptr, nbr, (typ, table)): per-site neighbour list; every 3x3 coupling block is stored once in
     ``table`` (row-major, 9 numbers) and referenced by an int32 type (translational invariance makes the

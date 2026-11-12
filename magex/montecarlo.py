@@ -70,7 +70,7 @@ def _heatbath(H, beta, rng):
 
 class MetropolisMC:
     def __init__(self, system: SpinSystem, temperature, seed=None, sigma=0.6, overrelax=1, move="gaussian",
-                 backend="auto"):
+                 backend="auto", dipolar_exact="auto"):
         """move: "gaussian" (adaptive cone, default), "uniform" (random direction), "heatbath" (exact
         heat-bath sampling of the linear exchange + Zeeman field, Metropolis-corrected for anisotropy and
         all nonlinear terms -> acceptance ~1 for weakly anisotropic magnets), "hinzke" (VAMPIRE-style
@@ -102,12 +102,28 @@ class MetropolisMC:
         self.tried = 0
         from . import fast
         self.fast = None
+        self.dip = None
         if backend in ("auto", "numba") and fast.available() and move in ("gaussian", "uniform", "heatbath"):
+            from .terms import Dipolar
             fm = fast.FastModel(system)
+            dips = [t for t in fm.other_terms if isinstance(t, Dipolar)]
+            rest = [t for t in fm.other_terms if not isinstance(t, Dipolar)]
             if not fm.nonlocal_:
                 self.fast = fm
                 self._streams = fast.seed_streams(seed)
                 self._fidx = [np.ascontiguousarray(g[0], np.int64) for g in self.groups]
+            elif len(dips) == 1 and not rest and not system.has_higher and dipolar_exact in (True, "auto") \
+                    and (dipolar_exact is True or system.N <= 50000):
+                d = dips[0]
+                self.fast = fm
+                self.dip = d
+                self._streams = fast.seed_streams(seed)
+                ns = system.uc.nsites
+                self._W = np.ascontiguousarray(np.stack([np.stack([d.Wr[(s_, t_)] for t_ in range(ns)])
+                                                         for s_ in range(ns)]))
+                self._cells = np.ascontiguousarray(system.cells[system.cell_index], np.int64)
+                self._sub = np.ascontiguousarray(system.sublattice, np.int64)
+                self._Bd = None
 
     def _dE(self, idx, A, mu, eo, en, h):
         de = en - eo
@@ -140,6 +156,15 @@ class MetropolisMC:
         sT = getattr(self.sys, "site_T", None)
         T = np.where(np.isnan(sT), self.T, sT) if sT is not None else np.full(N, self.T)
         beta = np.where(T > 0, 1.0 / (K_B * np.maximum(T, 1e-300)), np.inf)
+        if self.dip is not None:
+            # exact sequential sweep; dipolar field rebuilt by FFT every sweep to remove round-off drift
+            self._Bd = np.ascontiguousarray(self.dip.field(e))
+            mv = 1 if self.move == "uniform" else 0
+            a = fast._mc_dipolar_sweep(e, self._Bd, self._streams, *fm.args(), beta, self.sigma, mv, self._cells,
+                                       self._sub, self._W, N > 3000)
+            self.accepted += int(a)
+            self.tried += int(N - fm.pinned.sum())
+            return e
         mv = {"gaussian": 0, "uniform": 1, "heatbath": 2}[self.move]
         if mv == 2 and not np.all(np.isfinite(beta)):
             mv = 0
