@@ -79,6 +79,37 @@ def build(cfg, base=".", log=print):
         sysm.add_region(mask, r.get("name", r.get("material", f"region{k}")), **mat)
     for pair in cfg.get("interlayer", []):        # [[interlayer]] regions=[0,1] scale=0.5
         sysm.exchange_scale[tuple(pair["regions"])] = float(pair.get("scale", 1.0))
+    from . import extras
+    for k, r in enumerate(regions):
+        mask = sysm.region == k
+        for par_name, path in (r.get("maps") or {}).items():      # maps = {Ms = "ms.npy", Ku1 = "k.npy"}
+            pth = path if os.path.isabs(path) else os.path.join(base, path)
+            arr = extras.load_map(pth, mesh.n)
+            getattr(sysm, par_name)[mask] = arr[mask] if r.get("maps_mode", "absolute") == "absolute" \
+                else getattr(sysm, par_name)[mask] * arr[mask]
+            sysm.invalidate()
+        if "exchange_bias" in r:                                  # exchange_bias = {J = 1e-4, direction = [1,0,0]}
+            eb = r["exchange_bias"]
+            Beb = extras.exchange_bias_field(sysm, mask, float(eb["J"]), eb.get("direction", [1, 0, 0]),
+                                             eb.get("thickness_nm", None) and eb["thickness_nm"] * 1e-9)
+            sysm.B_ext_cell = Beb if sysm.B_ext_cell is None else sysm.B_ext_cell + Beb
+            log(f"  region {k}: exchange bias {np.abs(Beb[mask]).max() * 1e3:.1f} mT along {eb.get('direction', [1, 0, 0])}")
+    if "grains" in cfg:                                   # [grains] size_nm, Ku_spread, axis_spread_deg, gb_scale
+        g = cfg["grains"]
+        ng = extras.apply_grains(sysm, g["size_nm"], g.get("Ku_spread", 0.0), g.get("Ms_spread", 0.0),
+                                 g.get("axis_spread_deg", 0.0), g.get("gb_scale", 1.0), g.get("seed", 1))
+        log(f"  {ng} Voronoi grains of ~{g['size_nm']} nm")
+    for rk in cfg.get("rkky", []):                         # [[rkky]] layers = [k1, k2], J1 = -1e-3, J2 = 0
+        sysm.rkky.append((int(rk["layers"][0]), int(rk["layers"][1]), float(rk.get("J1", 0.0)), float(rk.get("J2", 0.0))))
+    if "oersted" in cfg:                                   # [oersted] J = [Jx,Jy,Jz], shape/z_layers of the conductor
+        oc = dict(cfg["oersted"])
+        Jv = np.asarray(oc.pop("J"), float)
+        shape = oc.pop("shape", "rectangle")
+        cmask = geometry_mask(mesh, shape, **{k: v for k, v in oc.items() if k in _GEOM_KEYS})
+        Jfield = np.zeros(mesh.n + (3,))
+        Jfield[cmask] = Jv
+        sysm.oersted = extras.oersted_field(mesh, Jfield)
+        log(f"  Oersted field: max {np.abs(sysm.oersted[sysm.magnetic]).max() * 1e3:.2f} mT in the magnet")
     fc = cfg.get("field", {})
     sysm.set_field(fc.get("B", [0, 0, 0]))
     if "pulse" in fc:

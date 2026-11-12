@@ -1,0 +1,32 @@
+# Exchange-biased granular film: shifted, rounded hysteresis loop
+#   magex micromag exchange_bias_grains.toml
+[mesh]
+n = [48, 48, 1]
+cell_nm = [4.0, 4.0, 4.0]
+pbc = [true, true, false]
+
+[[region]]
+material = "CoFeB"
+Ku1 = 2.0e4                    # weak in-plane uniaxial anisotropy along x
+anisU = [1, 0, 0]
+exchange_bias = {J = 2.0e-4, direction = [1, 0, 0]}   # J/m^2 -> B_eb = J/(Ms t) = 45 mT
+
+[grains]
+size_nm = 20
+Ku_spread = 0.3
+axis_spread_deg = 15
+gb_scale = 0.3
+
+[init]
+type = "uniform"
+direction = [1, 0, 0]
+
+[[stage]]
+type = "hysteresis"
+Bmax_T = 0.15
+npts = 31
+direction = [1, 0.02, 0]
+title = "exchange-biased granular film"
+
+[output]
+dir = "exchange_bias_out"

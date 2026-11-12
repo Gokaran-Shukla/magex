@@ -28,6 +28,9 @@
 - finite temperature in micromagnetics: Callen-Callen scaling of Ms, A, K, D from mean field or a
   Monte Carlo m(T) (`temperature_K`, `mc_results`); Landau-Lifshitz-Bloch solver and two-temperature
   model; ultrafast demagnetisation example
+- micromagnetic extras: Oersted fields (Biot-Savart FFT), RKKY bilinear + biquadratic interlayer
+  coupling across spacers, exchange bias, Voronoi grains (Ku/Ms/axis dispersion, grain-boundary
+  exchange), parameter maps from .npy/OVF
 
 ## 0.2.0 (2026-11-12)
 

@@ -57,6 +57,10 @@ class Micromagnet:
         self.stt = None                         # dict(type="zhang-li", J=[..], P, beta) | dict(type="slonczewski", ...)
         self.exchange_scale = {}                # {(r1, r2): factor} inter-region exchange scaling
         self.exchange_axis_scale = np.ones(3)   # anisotropic stiffness A_x, A_y, A_z = A * scale (altermagnets)
+        self.grain = None                       # (nx,ny,nz) grain ids; links across grains scaled by gb_scale
+        self.gb_scale = 1.0
+        self.rkky = []                          # [(k1, k2, J1, J2)] interlayer coupling (J/m^2) across a spacer
+        self.oersted = None                     # static Oersted field (nx,ny,nz,3), T
         self.use_demag = bool(demag)
         self.workers = workers
         self._demag = None
@@ -133,6 +137,9 @@ class Micromagnet:
         for (r1, r2), sc in self.exchange_scale.items():
             sel = ((self.region == r1) & (reg_nb == r2)) | ((self.region == r2) & (reg_nb == r1))
             Alink = np.where(sel, Alink * sc, Alink)
+        if self.grain is not None and self.gb_scale != 1.0:
+            gb = self.grain != np.roll(self.grain, -step, axis=axis)
+            Alink = np.where(gb & exists, Alink * self.gb_scale, Alink)
         missing = ~exists & self.magnetic
         Alink = np.where(missing, A, Alink)          # ghost link carries the cell's own A
         chiral = bool(np.any(ci[missing]) or np.any(cb[missing]))
@@ -223,7 +230,19 @@ class Micromagnet:
             Bzee = Bzee + self.B_ext_cell
         for mask, fn in self.B_local:
             Bzee = Bzee + mask[..., None] * np.asarray(fn(self.t if t is None else t), float)
+        if self.oersted is not None:
+            Bzee = Bzee + self.oersted
         F["zeeman"] = Bzee
+        if self.rkky:
+            Br = np.zeros_like(m)
+            dz = self.mesh.d[2]
+            for (k1, k2, J1, J2) in self.rkky:
+                m1, m2 = m[:, :, k1], m[:, :, k2]
+                d12 = np.einsum("...a,...a->...", m1, m2)[..., None]
+                for ka, mo, Msa in ((k1, m2, Ms[:, :, k1]), (k2, m1, Ms[:, :, k2])):
+                    inv = np.divide(1.0, Msa, out=np.zeros_like(Msa), where=Msa > 0)[..., None]
+                    Br[:, :, ka] += (J1 + 2 * J2 * d12) * mo * inv / dz
+            F["rkky"] = Br
         mag = self.magnetic[..., None]
         for k in F:
             F[k] = np.where(mag, F[k], 0.0)
@@ -253,7 +272,8 @@ class Micromagnet:
         return B
 
     # ------------------------------------------------------------------ energies (J)
-    _FACTOR = {"exchange": 0.5, "dmi": 0.5, "anisotropy": None, "cubic": 0.25, "demag": 0.5, "zeeman": 1.0}
+    _FACTOR = {"exchange": 0.5, "dmi": 0.5, "anisotropy": None, "cubic": 0.25, "demag": 0.5, "zeeman": 1.0,
+               "rkky": None}
 
     def energies(self, m, F=None):
         F = F or self.fields(m)
@@ -265,6 +285,14 @@ class Micromagnet:
                 mu = np.einsum("...a,...a->...", m, self.anisU)
                 e = -(self.Ku1 * mu**2 + self.Ku2 * mu**4)
                 E[k] = float(np.sum(e[self.magnetic]) * V)
+            elif k == "rkky":
+                dA = self.mesh.d[0] * self.mesh.d[1]
+                Er = 0.0
+                for (k1, k2, J1, J2) in self.rkky:
+                    both = self.magnetic[:, :, k1] & self.magnetic[:, :, k2]
+                    d12 = np.einsum("...a,...a->...", m[:, :, k1], m[:, :, k2])[both]
+                    Er += float(np.sum(-J1 * d12 - J2 * d12**2) * dA)
+                E[k] = Er
             else:
                 E[k] = float(-self._FACTOR[k] * np.sum(dens) * V)
         E["total"] = sum(E.values())

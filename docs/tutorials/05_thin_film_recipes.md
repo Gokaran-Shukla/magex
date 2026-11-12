@@ -122,3 +122,56 @@ dt_fs = 10
 
 The Brown field scales as √(2αk_BT/(γM_sVΔt)), so results depend on the cell volume (as in every
 finite-difference code); use cells of a few nm.
+
+## Interlayer coupling across a spacer (RKKY, bilinear + biquadratic)
+
+```toml
+[mesh]
+n = [64, 64, 3]                 # layer 0 | spacer (Ms = 0) | layer 2
+cell_nm = [2, 2, 1]
+
+[[rkky]]
+layers = [0, 2]                 # z-indices of the two coupled layers
+J1 = -1.0e-3                    # J/m^2, bilinear (negative: antiferromagnetic, synthetic AFM)
+J2 = -0.1e-3                    # J/m^2, biquadratic (negative favours 90 degree coupling)
+```
+
+    E = −Σ_cells A_cell [J1 m₁·m₂ + J2 (m₁·m₂)²]
+
+## Exchange bias and granular films — `exchange_bias_grains.toml`
+
+```toml
+[[region]]
+exchange_bias = {J = 2.0e-4, direction = [1, 0, 0]}   # J/m^2: B_eb = J/(Ms t)
+
+[grains]                        # Voronoi grains
+size_nm = 20
+Ku_spread = 0.3                 # relative dispersion of Ku
+axis_spread_deg = 15            # easy-axis cone
+gb_scale = 0.3                  # exchange across grain boundaries
+```
+
+![exchange bias](../img/tut_exchange_bias.png)
+
+The loop is shifted by −B_eb = −45 mT (simulated shift −45.1 mT) and rounded by the grain
+dispersion.
+
+## Oersted fields
+
+```toml
+[oersted]                       # current in a (non-magnetic or magnetic) part of the mesh
+J = [1e12, 0, 0]                # A/m^2
+shape = "rectangle"
+z_layers = [0, 0]               # e.g. a heavy-metal underlayer included as an Ms = 0 layer
+```
+
+Biot–Savart by FFT convolution; checked against the field of a thin wire, μ₀I/2πr, to 0.5 %.
+
+## Parameter maps
+
+```toml
+[[region]]
+material = "Co/Pt"
+maps = {Ku1 = "ku_map.npy", D = "d_map.npy"}     # (nx, ny, nz) or (nx, ny) arrays, or OVF files
+maps_mode = "absolute"                           # or "scale" (multiply the material value)
+```

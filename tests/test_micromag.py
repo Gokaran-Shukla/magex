@@ -267,3 +267,31 @@ def test_llb_mean_field_and_relaxation():
     m[..., 2] = 1.0
     m, _ = llb.run(m, 3e-12, 2e-16)
     assert abs(np.linalg.norm(m[0, 0, 0]) - m_eq(400.0, 630.0)) < 1e-4
+
+
+def test_oersted_rkky_exchange_bias_grains():
+    from magex.micromag.constants import MU0
+    from magex.micromag.extras import apply_grains, exchange_bias_field, oersted_field
+    mesh = Mesh((160, 21, 21), (1e-9,) * 3)
+    J = np.zeros(mesh.n + (3,))
+    J[:, 10, 10, 0] = 1e12                           # 1 nm^2 wire, I = 1 uA
+    B = oersted_field(mesh, J)
+    assert abs(B[80, 14, 10, 2] / (MU0 * 1e-6 / (2 * np.pi * 4e-9)) - 1) < 0.01
+    mesh = Mesh((1, 1, 3), (5e-9, 5e-9, 1e-9))
+    s = Micromagnet(mesh, demag=False)
+    for k in (0, 2):
+        z = np.zeros(mesh.n, bool)
+        z[:, :, k] = True
+        s.add_region(z, Ms=1e6, A=1e-11, Ku1=1e4, anisU=(1, 0, 0))
+    s.rkky = [(0, 2, -1e-3, 0.0)]
+    m = s.init("uniform", direction=(1, 0, 0))
+    m[:, :, 2] = [0.6, 0.8, 0]
+    m, _, _ = minimize(s, s.normalize(m), 1e-8)
+    assert m[0, 0, 0] @ m[0, 0, 2] < -0.999          # antiferromagnetic interlayer coupling
+    Beb = exchange_bias_field(s, s.magnetic, 1e-4, [1, 0, 0], 1e-9)
+    assert abs(Beb[0, 0, 0, 0] - 0.1) < 1e-12        # J/(Ms t) = 0.1 T
+    mesh = Mesh((64, 64, 1), (2e-9, 2e-9, 1e-9))
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=1e6, A=1e-11, Ku1=5e5)
+    ng = apply_grains(s, 10.0, Ku_spread=0.1, axis_spread_deg=5, gb_scale=0.5)
+    assert ng > 30 and s.grain.max() < ng and np.std(s.Ku1) > 0
