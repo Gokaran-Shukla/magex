@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased, branch `spin-dynamics`)
+## 0.2.0 (2026-11-12)
 
 Simulation engines on top of the exchange calculation.
 
