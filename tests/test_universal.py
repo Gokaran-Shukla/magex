@@ -219,7 +219,7 @@ def test_spin_lattice_energy_conservation(tmp):
         e, tab = sl.run(e, int(1.0 / dt), every=int(0.05 / dt))
         drift.append(np.ptp(tab[:, 1]))
         assert np.ptp(tab[:, 5]) > 10 * drift[-1]          # energy really flows between spins and lattice
-    assert drift[1] < 0.6 * drift[0]
+    assert drift[1] < 0.3 * drift[0]                      # second-order palindromic splitting
 
 
 def test_observables_and_writers(tmp):

@@ -108,23 +108,128 @@ def _frame(theta, phi, ref=(0, 0, 1)):
     return np.array([t1, np.cross(n, t1), n]), rot_axis
 
 
+from . import fast as _fast
+
+if _fast.HAVE_NUMBA:
+    @njit(cache=True)
+    def _site_dE_g(i, eo, en, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, Bd, W, sub, dip):
+        hx, hy, hz = _fast._hfield(i, e, ptr, nbr, Jb)
+        zf = MU_B * mu[i]
+        bx, by, bz = B[0], B[1], B[2]
+        selfd = 0.0
+        if dip:
+            si = sub[i]
+            W0 = W[si, si, 0, 0, 0]
+            # field of all other spins (own periodic images removed) and own-image energy change
+            ox = Bd[i, 0] - mu[i] * (W0[0, 0] * eo[0] + W0[0, 1] * eo[1] + W0[0, 2] * eo[2])
+            oy = Bd[i, 1] - mu[i] * (W0[1, 0] * eo[0] + W0[1, 1] * eo[1] + W0[1, 2] * eo[2])
+            oz = Bd[i, 2] - mu[i] * (W0[2, 0] * eo[0] + W0[2, 1] * eo[1] + W0[2, 2] * eo[2])
+            bx += ox
+            by += oy
+            bz += oz
+            qn = 0.0
+            qo = 0.0
+            for a_ in range(3):
+                for b_ in range(3):
+                    qn += en[a_] * W0[a_, b_] * en[b_]
+                    qo += eo[a_] * W0[a_, b_] * eo[b_]
+            selfd = -0.5 * MU_B * mu[i] ** 2 * (qn - qo)
+        dx, dy, dz = en[0] - eo[0], en[1] - eo[1], en[2] - eo[2]
+        dE = -2.0 * (hx * dx + hy * dy + hz * dz) - zf * (bx * dx + by * dy + bz * dz) + selfd
+        dE += _fast._onsite_E(i, en[0], en[1], en[2], A, Kc, C, K2, K3, u, has_c, has_u) - \
+            _fast._onsite_E(i, eo[0], eo[1], eo[2], A, Kc, C, K2, K3, u, has_c, has_u)
+        return dE
+
+    @njit(cache=True)
+    def _cmc_general(e, nsweeps, beta, sigma, frame, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u,
+                     Bd, W, cells, sub, dip, seed):
+        np.random.seed(seed)
+        N = e.shape[0]
+        t1, t2, n = frame[0], frame[1], frame[2]
+        fx, fy, fz = W.shape[2], W.shape[3], W.shape[4]
+        Mz = 0.0
+        for i in range(N):
+            Mz += e[i, 0] * n[0] + e[i, 1] * n[1] + e[i, 2] * n[2]
+        acc = 0
+        for s_ in range(nsweeps * N):
+            i = np.random.randint(N)
+            j = np.random.randint(N - 1)
+            if j >= i:
+                j += 1
+            ei = e[i].copy()
+            ej = e[j].copy()
+            ni = ei + sigma * np.random.standard_normal(3)
+            ni /= np.sqrt(ni[0] ** 2 + ni[1] ** 2 + ni[2] ** 2)
+            xi, yi, zi = ei @ t1, ei @ t2, ei @ n
+            xn, yn, zn = ni @ t1, ni @ t2, ni @ n
+            xj, yj, zj = ej @ t1, ej @ t2, ej @ n
+            xjn = xj + xi - xn
+            yjn = yj + yi - yn
+            r = 1.0 - xjn * xjn - yjn * yjn
+            if r < 0:
+                continue
+            zjn = np.sqrt(r) if zj >= 0 else -np.sqrt(r)
+            Mzn = Mz + zn - zi + zjn - zj
+            if Mzn <= 0:
+                continue
+            nj = xjn * t1 + yjn * t2 + zjn * n
+            dE = _site_dE_g(i, ei, ni, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, Bd, W, sub, dip)
+            e[i] = ni
+            if dip:
+                _fast._dip_update_serial(Bd, i, mu[i] * (ni[0] - ei[0]), mu[i] * (ni[1] - ei[1]), mu[i] * (ni[2] - ei[2]),
+                                         cells, sub, cells[i, 0], cells[i, 1], cells[i, 2], sub[i], W, fx, fy, fz)
+            dE += _site_dE_g(j, ej, nj, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, Bd, W, sub, dip)
+            p = (Mzn / Mz) ** 2 * abs(zj) / max(abs(zjn), 1e-300) * np.exp(-min(beta * dE, 700.0))
+            if p >= 1.0 or np.random.random() < p:
+                e[j] = nj
+                if dip:
+                    _fast._dip_update_serial(Bd, j, mu[j] * (nj[0] - ej[0]), mu[j] * (nj[1] - ej[1]),
+                                             mu[j] * (nj[2] - ej[2]), cells, sub, cells[j, 0], cells[j, 1], cells[j, 2],
+                                             sub[j], W, fx, fy, fz)
+                Mz = Mzn
+                acc += 1
+            else:
+                if dip:
+                    _fast._dip_update_serial(Bd, i, -mu[i] * (ni[0] - ei[0]), -mu[i] * (ni[1] - ei[1]),
+                                             -mu[i] * (ni[2] - ei[2]), cells, sub, cells[i, 0], cells[i, 1], cells[i, 2],
+                                             sub[i], W, fx, fy, fz)
+                e[i] = ei
+        return acc / (nsweeps * N)
+
+
 def constrained_mc(system, T, theta, phi=0.0, ref=(0, 0, 1), therm=2000, meas=4000, every=5, sigma=0.3,
                    seed=1, e0=None):
-    """Thermal averages at fixed magnetisation direction.  Returns dict(m, torque (meV per spin), E, acc)."""
-    if system.terms or system.has_higher:
-        raise NotImplementedError("constrained MC supports exchange, DMI, single-ion anisotropy and field")
+    """Thermal averages at fixed magnetisation direction.  Returns dict(m, torque (meV per spin), E, acc).
+
+    Supported: exchange tensors, DMI, single-ion and folded surface anisotropy, Zeeman, cubic and higher
+    uniaxial terms and the exact dipolar interaction (field updated incrementally after every move)."""
+    from .terms import Dipolar
+    fm = _fast.FastModel(system)
+    dips = [t for t in fm.other_terms if isinstance(t, Dipolar)]
+    rest = [t for t in fm.other_terms if not isinstance(t, Dipolar)]
+    if rest or system.has_higher:
+        raise NotImplementedError("constrained MC: biquadratic, four-spin and quadruplet terms are not supported")
     frame, rax = _frame(theta, phi, ref)
-    J = system.Jsp.tocsr()
-    J.sort_indices()
-    args = (J.indptr.astype(np.int64), J.indices.astype(np.int64), J.data.astype(float),
-            np.ascontiguousarray(system.A, float), system.mu.astype(float), np.asarray(system.B, float), MU_B)
+    ns = system.uc.nsites
+    if dips:
+        d = dips[0]
+        W = np.ascontiguousarray(np.stack([np.stack([d.Wr[(s_, t_)] for t_ in range(ns)]) for s_ in range(ns)]))
+    else:
+        W = np.zeros((1, 1, 1, 1, 1, 3, 3))
+    cells = np.ascontiguousarray(system.cells[system.cell_index], np.int64)
+    sub = np.ascontiguousarray(system.sublattice, np.int64)
     e = np.tile(frame[2], (system.N, 1)) if e0 is None else e0.copy()
     beta = 1.0 / (K_B * max(T, 1e-9))
     rng = np.random.default_rng(seed)
-    a = _cmc_sweeps(e, therm, beta, sigma, frame, *args, int(rng.integers(1 << 30)))
+    a0 = fm.args()[:-1]
+
+    def sweeps(nsw):
+        Bd = np.ascontiguousarray(dips[0].field(e)) if dips else np.zeros((system.N, 3))
+        return _cmc_general(e, nsw, beta, sigma, frame, *a0, Bd, W, cells, sub, bool(dips), int(rng.integers(1 << 30)))
+    a = sweeps(therm)
     ms, tq, Es = [], [], []
     for k in range(meas // every):
-        a = _cmc_sweeps(e, every, beta, sigma, frame, *args, int(rng.integers(1 << 30)))
+        a = sweeps(every)
         g = system.gradient(e)
         tau = np.cross(e, -g).sum(0)
         tq.append(float(tau @ rax) / system.N)
