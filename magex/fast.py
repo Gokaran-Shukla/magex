@@ -39,6 +39,8 @@ if HAVE_NUMBA:
     @njit(inline="always")
     def _onsite_grad(i, x, y, z, A, Kc, C, K2, K3, u, has_c, has_u):
         """dE_onsite/de (meV) for site i at direction (x, y, z)."""
+        if A.shape[0] == 0:                     # no on-site terms at all (see FastModel.args)
+            return 0.0, 0.0, 0.0
         gx = 2.0 * (A[i, 0, 0] * x + A[i, 0, 1] * y + A[i, 0, 2] * z)
         gy = 2.0 * (A[i, 1, 0] * x + A[i, 1, 1] * y + A[i, 1, 2] * z)
         gz = 2.0 * (A[i, 2, 0] * x + A[i, 2, 1] * y + A[i, 2, 2] * z)
@@ -64,6 +66,8 @@ if HAVE_NUMBA:
     @njit(inline="always")
     def _onsite_E(i, x, y, z, A, Kc, C, K2, K3, u, has_c, has_u):
         E = 0.0
+        if A.shape[0] == 0:                     # no on-site terms at all (see FastModel.args)
+            return 0.0
         v = (x, y, z)
         for a in range(3):
             for b in range(3):
@@ -701,7 +705,7 @@ if HAVE_NUMBA:
     _gauss3_s = njit(cache=False)(_gauss3.py_func)
     _field_s = njit(cache=False)(_field.py_func)
 
-SERIAL_BELOW = 4096
+SERIAL_BELOW = 2048
 
 
 def pick(name, n):

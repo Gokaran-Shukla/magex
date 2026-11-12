@@ -36,4 +36,5 @@ nav:
       - 20 mumax3-style micromagnetics: tutorials/20_micromagnetics_mumax3.md
       - Conventions: tutorials/conventions.md
   - Feature matrix: feature_matrix.md
+  - Benchmarks: benchmarks.md
   - Notebooks: notebooks.md

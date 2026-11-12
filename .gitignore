@@ -21,3 +21,6 @@ examples/micromag/*.log
 examples/spindyn/*/
 examples/spindyn/*.log
 examples/universal/*_out/
+benchmarks/vamp/
+benchmarks/upp/
+benchmarks/spi/

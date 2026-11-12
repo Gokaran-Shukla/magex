@@ -111,7 +111,9 @@ def _frame(theta, phi, ref=(0, 0, 1)):
 from . import fast as _fast
 
 if _fast.HAVE_NUMBA:
-    @njit(cache=True)
+    # no on-disk cache: these kernels inline functions from magex/fast.py, whose changes numba's cache
+    # (keyed on this file only) would not see
+    @njit
     def _site_dE_g(i, eo, en, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, Bd, W, sub, dip):
         hx, hy, hz = _fast._hfield(i, e, ptr, nbr, Jb)
         zf = MU_B * mu[i]
@@ -140,7 +142,7 @@ if _fast.HAVE_NUMBA:
             _fast._onsite_E(i, eo[0], eo[1], eo[2], A, Kc, C, K2, K3, u, has_c, has_u)
         return dE
 
-    @njit(cache=True)
+    @njit
     def _cmc_general(e, nsweeps, beta, sigma, frame, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u,
                      Bd, W, cells, sub, dip, seed):
         np.random.seed(seed)

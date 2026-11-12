@@ -25,6 +25,19 @@
 - exporters translate `[structure]`, `[program]` and `[llg]` to VAMPIRE, UppASD and Spirit input; the mumax3
   exporter handles several regions, CSG shapes and the new terms
 - docs: tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
+- speed: multithreaded numba kernels (fused Heun/Depondt steps, ziggurat RNG on chunked xorshift streams,
+  compact symmetry-reduced coupling storage, parallel Monte Carlo colour sweeps, fused micromagnetic local
+  fields, optional single-precision demag); faster per core than VAMPIRE, UppASD and Spirit on the same CPU
+  (docs/benchmarks.md)
+- cross-validation: identical m(T) from VAMPIRE, UppASD and magex and identical energies from Spirit for the
+  same exported model; exporter keywords checked against the three parsers (UppASD anisotropy file added,
+  VAMPIRE roughness/dipole keywords fixed)
+- exact dipolar Monte Carlo (incremental field, self-image term); spherical image summation with analytic film
+  tail; fixed the sublattice offset sign of the dipolar FFT kernel (multi-sublattice systems)
+- sparse/matrix-free Hessians, shift-invert eigenmodes and LLG frequencies for 10⁴–10⁶ spins; HTST with zero
+  modes and refined saddles (`[gneb] htst = true`)
+- constrained Monte Carlo with dipolar and higher-order on-site terms; Langevin longitudinal spin dynamics
+- spin–lattice dynamics: palindromic (second-order) splitting, symplectic spin sub-step, J(r) on all shells
 
 ## 0.3.0 (in development, branch `dev-0.3`)
 

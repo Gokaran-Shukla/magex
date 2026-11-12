@@ -427,6 +427,7 @@ magex export  examples/universal/nanodot_dipolar.toml --to vampire   # also uppa
 | programs | hysteresis, field cooling, annealing, FMR, K(T), T_C / T_N, S(q,ω), LSWT |
 | micromagnetics | CSG shapes, edge smoothing, Kc1–3, magnetoelastic, frozen spins, inter-region DMI, custom terms, RK45/RK23/RK4/Heun/Euler, moving frame, autosave, AFM/altermagnets, LLB |
 | output | CSV, NPZ, VTK, extended XYZ, OVF 2.0; exporters to VAMPIRE, UppASD, Spirit, mumax3 |
+| speed | multithreaded kernels: 29 ns/spin/step LLG and 50 ns/spin/sweep MC on 2 cores; faster per core than VAMPIRE, UppASD and Spirit on the same CPU, with identical results ([benchmarks](docs/benchmarks.md)) |
 
 ## Repository layout
 
