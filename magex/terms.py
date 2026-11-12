@@ -136,7 +136,7 @@ class Dipolar(_Term):
     whatever its offset representation.  For films (two periodic in-plane axes) the remaining tail of the
     absolutely convergent 2D sum is added analytically (continuum sheets beyond R_c):
         B_tail = (pi mu0 mu_B / 4 pi) (mu_t / A_cell R_c) (P_plane - 2 n n) . e_t   per layer,
-    which makes the error O(R_c^-3).  3D-periodic sums use spherical summation (vacuum boundary).
+    which reduces the error by about two orders of magnitude (1e-4 at 2 shells, 4e-6 at 8 for a monolayer).  3D-periodic sums use spherical summation (vacuum boundary).
     """
     long_range = True
 

@@ -55,7 +55,7 @@ conversions of the exporters (VAMPIRE J = 2 J_magex in joules; UppASD J = J_mage
   incrementally (O(N) per accepted move), including each spin's coupling to its own periodic images.
   It matches brute-force Metropolis on full energies (tests/test_fast.py).
 * Periodic dipolar sums use spherical image summation, with an analytic far-field tail for films, so the
-  shape anisotropy converges to 3×10⁻⁴ at 2 images and 10⁻⁷ at 4.  A sign error in the sublattice offset
+  monolayer shape anisotropy is converged to 10⁻⁴ at 2 image shells and 4×10⁻⁶ at 8 (10⁻² without the tail).  A sign error in the sublattice offset
   of the FFT kernel (multi-sublattice systems only) was found by the direct-sum test and fixed.
 * Spin–lattice dynamics: the splitting is now palindromic (the earlier version was only first order), and the
   spin sub-step is a symplectic colour-group sweep, so the energy error is second order and bounded.

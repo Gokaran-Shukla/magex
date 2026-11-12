@@ -452,3 +452,8 @@ and, for the dynamics engines,
 ## Licence
 
 MIT, see [`LICENSE`](LICENSE). The validation runs use the public [TB2J example data](https://github.com/mailhexu/TB2J_examples); that data is not redistributed here.
+
+
+## Presentation
+
+The complete mathematical formalism of magex as a Beamer deck: [magex_complete_formalism.pdf](magex_complete_formalism.pdf).

@@ -48,6 +48,8 @@ multilayers), DFT → micromagnetics, Python API.
 
 ---
 
+**Presentation:** [`docs/magex_complete_formalism.pdf`](docs/magex_complete_formalism.pdf) — 96-slide Beamer deck with the complete mathematical formalism (exchange from Wannier Hamiltonians, atomistic spin model, spin dynamics, statistical mechanics, energy landscapes, micromagnetics, implementation and benchmarks). Source: `docs/slides_src/magex_complete.tex` (+ `engine_parts.tex`, figures from `make_figs.py` and `make_figs_engine.py`).
+
 ## Part I — exchange parameters from Wannier Hamiltonians
 
 `magex` computes the parameters of the extended Heisenberg model

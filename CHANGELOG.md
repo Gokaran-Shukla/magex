@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (in development, branch `dev-0.4`) — universal engine
+## 0.4.0 — universal engine
 
 - atomistic structure builder `[structure]`: sphere / cylinder / cube / ellipsoid / truncated-octahedron
   particles, core–shell, multilayers, random alloys, vacancies, surface roughness, pinned spins, per-material
@@ -24,7 +24,7 @@
   RK4 / RK2 / Euler / Heun solvers, moving frame, OVF autosave and field maps
 - exporters translate `[structure]`, `[program]` and `[llg]` to VAMPIRE, UppASD and Spirit input; the mumax3
   exporter handles several regions, CSG shapes and the new terms
-- docs: tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
+- docs: complete 96-slide Beamer deck of the formalism (docs/magex_complete_formalism.pdf); tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
 - speed: multithreaded numba kernels (fused Heun/Depondt steps, ziggurat RNG on chunked xorshift streams,
   compact symmetry-reduced coupling storage, parallel Monte Carlo colour sweeps, fused micromagnetic local
   fields, optional single-precision demag); faster per core than VAMPIRE, UppASD and Spirit on the same CPU
@@ -39,7 +39,7 @@
 - constrained Monte Carlo with dipolar and higher-order on-site terms; Langevin longitudinal spin dynamics
 - spin–lattice dynamics: palindromic (second-order) splitting, symplectic spin sub-step, J(r) on all shells
 
-## 0.3.0 (in development, branch `dev-0.3`)
+## 0.3.0
 
 - packaging: PyPI trusted-publishing workflow, conda recipe, ReadTheDocs/MkDocs site, executed notebooks,
   example smoke tests in CI, JOSS paper draft (paper/)
