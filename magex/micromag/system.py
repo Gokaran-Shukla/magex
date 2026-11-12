@@ -55,6 +55,7 @@ class Micromagnet:
         self.B_local = []                       # list of (mask (nx,ny,nz), callable t -> (3,)) local fields
         self.sot = None                         # dict(J, theta, sigma, fl_ratio, thickness)
         self.exchange_scale = {}                # {(r1, r2): factor} inter-region exchange scaling
+        self.exchange_axis_scale = np.ones(3)   # anisotropic stiffness A_x, A_y, A_z = A * scale (altermagnets)
         self.use_demag = bool(demag)
         self.workers = workers
         self._demag = None
@@ -189,7 +190,7 @@ class Micromagnet:
                 grad.append(np.zeros_like(m))
                 continue
             d2 = self.mesh.d[axis] ** 2
-            lap += (Ap[..., None] * (p - m) + Aq[..., None] * (q - m)) / d2
+            lap += self.exchange_axis_scale[axis] * (Ap[..., None] * (p - m) + Aq[..., None] * (q - m)) / d2
             grad.append((p - q) / (2 * self.mesh.d[axis]))
         F["exchange"] = 2 * inv * lap
         if np.any(self.D_int):

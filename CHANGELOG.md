@@ -15,6 +15,9 @@
 - `magex gneb`: geodesic nudged elastic band with climbing image for atomistic and micromagnetic
   systems; BB minimiser on the spheres; Arrhenius lifetimes; examples for skyrmion collapse and
   MRAM thermal stability
+- two-sublattice micromagnetics (`[afm]`): antiferromagnets, ferrimagnets and d-wave altermagnets
+  (sublattice-anisotropic stiffness), homogeneous/inhomogeneous inter-sublattice exchange, demag of
+  the total magnetisation, SOT; chirality-resolved spin-wave dispersion; AFM domain-wall velocity example
 
 ## 0.2.0 (2026-11-12)
 

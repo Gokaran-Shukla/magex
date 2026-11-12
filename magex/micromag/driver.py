@@ -89,6 +89,9 @@ def build(cfg, base=".", log=print):
 
 
 def run_micromag_config(cfg, base=".", log=print):
+    if "afm" in cfg:                       # two-sublattice antiferro-/ferri-/altermagnet
+        from .afm import run_afm_config
+        return run_afm_config(cfg, base, log)
     sysm = build(cfg, base, log)
     log(sysm.summary())
     oc = cfg.get("output", {})

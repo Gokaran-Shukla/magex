@@ -167,3 +167,34 @@ def test_gneb_stoner_wohlfarth_barrier():
         r = GNEB(ad, slerp_path(a, b, 9)).run(0.0, 3000, rel_tol=1e-6).result()
         h = Ms * B / (2 * K)
         assert abs(r["barrier_forward"] / (K * V * (1 - h) ** 2) - 1) < 1e-3
+
+
+def test_afmr_frequency_and_altermagnet_splitting():
+    from magex.micromag.afm import TwoSublatticeMagnet, afm_analytic, afm_dispersion
+    from magex.micromag.constants import GAMMA_LL
+    from magex.micromag.solver import Heun
+    mesh = Mesh((1, 1, 1), (2e-9,) * 3)
+    s = TwoSublatticeMagnet(mesh, demag=False)
+    Ms, K, J = 4e5, 1e5, 4e7
+    s.add_region(np.ones(mesh.n, bool), Ms=Ms, A=1e-11, Ku1=K, alpha=0.0, J_AF=J)
+    m = s.init("neel")
+    m[0, ..., 0] += 0.02
+    m = s.normalize(m)
+    tr = []
+    Heun(s, dt=2e-15).run(m, 10e-12, 5e-15, lambda t, mm: tr.append(mm[0, 0, 0, 0, 0]))
+    z = np.where(np.diff(np.sign(tr)))[0]
+    f = (len(z) - 1) / 2 / ((z[-1] - z[0]) * 5e-15)
+    BK, BE = 2 * K / Ms, J / Ms
+    assert abs(f / (GAMMA_LL / (2 * np.pi) * np.sqrt(BK * (2 * BE + BK))) - 1) < 2e-3
+    mesh = Mesh((64, 1, 1), (1e-9,) * 3, pbc=(True, False, False))
+    s = TwoSublatticeMagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=Ms, A=1e-11, Ku1=K, alpha=0.001, J_AF=J)
+    s.set_altermagnet(0.3)
+    k, f, P = afm_dispersion(s, s.init("neel"), time_ns=0.05, fmax_GHz=3000)
+    fp, fm = afm_analytic(s, k)
+    df = f[1] - f[0]
+    i = np.argmin(abs(k - 0.4))
+    pos, neg = f > 0, f < 0
+    assert abs(f[pos][np.argmax(P[i, pos])] - fp[i]) < 2 * df
+    assert abs(-f[neg][np.argmax(P[i, neg])] - fm[i]) < 2 * df
+    assert fp[i] - fm[i] > 5 * df                  # chirality splitting resolved

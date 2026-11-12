@@ -25,6 +25,7 @@ Python package. MPI/multithreaded on CPUs.**
 | **Energy barriers** | `magex gneb` | geodesic nudged elastic band with climbing image (atomistic and micromagnetic): skyrmion collapse, bit stability Δ, lifetimes |
 | **Monte Carlo** | `magex mc` | vectorised Metropolis + over-relaxation (graph colouring), automatic FM/AFM/ferri order parameter, Binder crossing → T_C / T_N |
 | **Micromagnetics** | `magex micromag` | OOMMF/mumax-style FD solver: Newell demag (FFT, PBC), exchange, interfacial/bulk DMI with chiral BCs, uniaxial/cubic anisotropy, SOT, RK45/Heun/BB, hysteresis, multilayers, OVF 2.0 |
+| **Antiferro/ferri/altermagnets** | `[afm]` in `magex micromag` | two-sublattice micromagnetics: AFMR, chirality-split altermagnet magnons, SOT-driven AFM domain walls (relativistic contraction) |
 | **Multiscale bridge** | `magex params` | A, D, K, Ms from the atomistic tensors (validated to 0.05 %) |
 | **Model Hamiltonians** | `magex model` | chain, square, triangular, honeycomb, kagome, sc, bcc, fcc with J shells, DMI, K |
 

@@ -1,0 +1,37 @@
+# Chiral magnon splitting in a d-wave altermagnet (no spin-orbit coupling needed)
+#   magex micromag altermagnet_magnons.toml
+# Two-sublattice model with sublattice-anisotropic stiffness A^A = A (1+d, 1-d), A^B = A (1-d, 1+d):
+# along x the two magnon chiralities split by (gamma/2pi)(4 A d / Ms) k^2 (opposite sign along y).
+[mesh]
+n = [128, 1, 1]
+cell_nm = [1.0, 1.0, 1.0]
+pbc = [true, false, false]
+
+[demag]
+enabled = false
+
+[afm]
+J_AF = 4.0e7                 # J/m^3 homogeneous inter-sublattice exchange (B_E = J_AF/Ms = 100 T)
+altermagnet_delta = 0.3
+
+[[region]]
+Ms = 4.0e5
+A = 1.0e-11
+Ku1 = 1.0e5
+anisU = [0, 0, 1]
+alpha = 0.001
+
+[init]
+type = "neel"
+direction = [0, 0, 1]
+
+[[stage]]
+type = "dispersion"
+axis = "x"
+time_ns = 0.1
+fmax_GHz = 3000
+kmax = 0.8
+title = "d-wave altermagnet: chirality-split magnons"
+
+[output]
+dir = "altermagnet_out"

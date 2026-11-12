@@ -24,6 +24,7 @@ own from a model Hamiltonian or a material library.
 | 9 | [Quantum corrections](09_quantum_statistics.md) | RPA T_C, (S+1)/S rescaling, quantum (Planck) thermostat for LLG | seconds |
 | 10 | [Magnon spectra from dynamics](10_magnon_spectra.md) | S(q, ω) from LLG vs LSWT; micromagnetic spin-wave dispersion, DMI non-reciprocity | 1 min |
 | 11 | [Energy barriers and lifetimes](11_energy_barriers.md) | GNEB: skyrmion collapse, MRAM thermal stability Δ, Arrhenius lifetimes | seconds–minutes |
+| 12 | [Antiferro-, ferri- and altermagnets](12_antiferromagnets.md) | two-sublattice micromagnetics, AFMR, chiral magnon splitting, SOT-driven AFM walls | 1–2 min |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);
