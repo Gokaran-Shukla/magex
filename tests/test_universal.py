@@ -325,7 +325,7 @@ def test_exporters_translate_structure_and_programs(tmp):
                llg=dict(alpha=0.1, dt=1e-3, steps=100, field=[0, 0, 1.0], stt=dict(u=[10, 0, 0], beta=0.1)))
     v = open(export_vampire(str(p), str(tmp / "v"), cfg=cfg) + "/input").read()
     assert "create:sphere" in v and "dimensions:particle-size = 4.0000 !nm" in v
-    assert "dipole:solver = tensor" in v and "sim:program = hysteresis-loop" in v
+    assert "dipole:solver = atomistic" in v and "sim:program = hysteresis-loop" in v
     u = open(export_uppasd(str(p), str(tmp / "u"), cfg=cfg) + "/inpsd.dat.template").read()
     assert "do_dip 1" in u and "stt A" in u
     sp = open(export_spirit(str(p), str(tmp / "s"), cfg=cfg) + "/input.cfg").read()

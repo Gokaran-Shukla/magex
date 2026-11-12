@@ -671,7 +671,7 @@ class FastModel:
         out = np.empty_like(e) if out is None else out
         has_extra = extra is not None
         ex = extra if has_extra else np.zeros((1, 3))
-        _field(e, out, self.ptr, self.nbr, self.Jb, self.args()[3], self.mu, np.asarray(self.sys.B, float), self.Kc,
+        pick("_field", len(e))(e, out, self.ptr, self.nbr, self.Jb, self.args()[3], self.mu, np.asarray(self.sys.B, float), self.Kc,
                self.C, self.K2, self.K3, self.u, self.has_c, self.has_u, self.pinned, ex, has_extra)
         return out
 
@@ -691,3 +691,19 @@ def available():
 def set_threads(n):
     if HAVE_NUMBA:
         numba.set_num_threads(int(n))
+
+
+# serial twins of the parallel kernels (small systems: no thread start-up cost)
+if HAVE_NUMBA:
+    _mc_group_s = njit(cache=False)(_mc_group.py_func)
+    _fused1_s = njit(cache=False)(_fused1.py_func)
+    _fused2_s = njit(cache=False)(_fused2.py_func)
+    _gauss3_s = njit(cache=False)(_gauss3.py_func)
+    _field_s = njit(cache=False)(_field.py_func)
+
+SERIAL_BELOW = 4096
+
+
+def pick(name, n):
+    """Parallel kernel for large n, its serial twin below SERIAL_BELOW sites."""
+    return globals()[name + "_s"] if n < SERIAL_BELOW else globals()[name]

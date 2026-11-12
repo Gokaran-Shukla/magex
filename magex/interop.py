@@ -199,6 +199,7 @@ def export_uppasd(results, outdir, J="mft", rcut=None, cfg=None):
         for k in range(uc.nsites):
             d = uc.ref_dirs[k]
             f.write(f"{k + 1} 1 {uc.moments[k]:.6f} {d[0]:.6f} {d[1]:.6f} {d[2]:.6f}\n")
+    has_dm = False
     with open(os.path.join(outdir, "jfile"), "w") as fj, open(os.path.join(outdir, "dmfile"), "w") as fd:
         for (i, j, R, Jt) in uc.couplings:
             Jt = np.asarray(Jt)
@@ -207,7 +208,18 @@ def export_uppasd(results, outdir, J="mft", rcut=None, cfg=None):
             JA = 0.5 * (Jt - Jt.T)
             D = np.array([JA[1, 2], JA[2, 0], JA[0, 1]]) / MRY_MEV
             if np.max(np.abs(D)) > 0:
+                has_dm = True
                 fd.write(f"{i + 1} {j + 1} {vec[0]: .8f} {vec[1]: .8f} {vec[2]: .8f} {D[0]: .8e} {D[1]: .8e} {D[2]: .8e}\n")
+    # single-ion anisotropy (UppASD: E = -K1 sin^2(theta) - K2 sin^4(theta) about e_K, mRy; K1 < 0 = easy axis)
+    has_k = False
+    with open(os.path.join(outdir, "kfile"), "w") as fk:
+        for k in range(uc.nsites):
+            A = np.asarray(uc.A[k])
+            ev, V = np.linalg.eigh(A)
+            Ku = 0.5 * (ev[1] + ev[2]) - ev[0]                  # meV: E(hard plane) - E(easy axis)
+            ax = V[:, 0]
+            has_k = has_k or abs(Ku) > 0
+            fk.write(f"{k + 1} 1 {-Ku / MRY_MEV: .8e} 0.0 {ax[0]: .8f} {ax[1]: .8f} {ax[2]: .8f} 0.0\n")
     with open(os.path.join(outdir, "inpsd.dat.template"), "w") as f:
         f.write(f"""simid magex
 ncell 20 20 20
@@ -219,9 +231,8 @@ Sym 0
 posfiletype D
 posfile ./posfile
 exchange ./jfile
-dm ./dmfile
-momfile ./momfile
-maptype 1
+""" + ("dm ./dmfile\n" if has_dm else "") + """momfile ./momfile
+""" + ("anisotropy ./kfile\n" if has_k else "") + """maptype 1
 initmag 3
 ip_mode M
 ip_mcanneal 1
@@ -476,12 +487,15 @@ def vampire_extras(cfg):
         size = 2 * float(size if np.isscalar(size) else max(size)) if sh != "cube" else float(size)
         out.append(f"dimensions:particle-size = {size / 10:.4f} !nm")
     if st.get("dipolar"):
-        out += ["dipole:solver = tensor", "dipole:field-update-rate = 1"]
+        out += ["dipole:solver = atomistic", "dipole:field-update-rate = 1"]     # exact pair sum, as magex
     if "vacancies" in st:
         v = st["vacancies"]
         out.append(f"# vacancies: use material[n]:density = {1 - (v if np.isscalar(v) else v['fraction']):.4f}")
     if "roughness" in st:
-        out.append("create:surface-roughness  # adjust create:surface-roughness-* to the magex roughness amplitude")
+        ro = st["roughness"] if isinstance(st["roughness"], dict) else {}
+        out += ["create:interfacial-roughness", f"create:interfacial-roughness-random-seed = {ro.get('seed', 1)}",
+                f"create:interfacial-roughness-mean-height = {float(ro.get('amplitude', 1.0)) * 3:.3f} !A",
+                f"create:interfacial-roughness-seed-radius = {float(ro.get('correlation', 10.0)):.3f} !A"]
     pr = cfg.get("program", {}) or {}
     if pr:
         typ = pr.get("type", "hysteresis")

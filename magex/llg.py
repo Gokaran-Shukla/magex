@@ -189,15 +189,16 @@ class LLGSolver:
                 b[:] = self.thermal_field()
             elif not noisy:
                 b[:] = 0.0
-            fast._fused1(e, bf["ep"], bf["k1"], b, self._streams, self._sig if (noisy and not quantum) else bf["B"][:, 0],
+            N_ = self.sys.N
+            fast.pick("_fused1", N_)(e, bf["ep"], bf["k1"], b, self._streams, self._sig if (noisy and not quantum) else bf["B"][:, 0],
                          self._alpha_arr, dt, self.precession, depondt, noisy and not quantum, *fm.args())
-            fast._fused2(e, bf["ep"], bf["k1"], b, self._alpha_arr, dt, self.precession, depondt, *fm.args())
+            fast.pick("_fused2", N_)(e, bf["ep"], bf["k1"], b, self._alpha_arr, dt, self.precession, depondt, *fm.args())
             self.time += dt
             return e
         if quantum and noisy:
             b[:] = self.thermal_field()
         elif noisy:
-            fast._gauss3(b, self._streams, self._sig, fm.pinned)
+            fast.pick("_gauss3", self.sys.N)(b, self._streams, self._sig, fm.pinned)
         else:
             b[:] = 0.0
         B = self._fast_field(e, t, bf["B"])
