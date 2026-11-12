@@ -38,10 +38,13 @@ def _skew(D):
 
 
 def make_model(lattice="sc", a=3.0, J=(1.0,), D=0.0, dmi="interfacial", normal=(0, 0, 1), K=0.0,
-               K_axis=(0, 0, 1), moment=2.0, order="ferro", afm_signs=None, Jani=None, mesh=None):
+               K_axis=(0, 0, 1), moment=2.0, order="ferro", afm_signs=None, Jani=None, mesh=None,
+               Bq=None, K4=0.0):
     """Return a results.json-style dict.
 
     J        couplings per neighbour shell (meV, per ordered pair), J[0] = nearest neighbours
+    Bq       biquadratic constants per shell (meV, per ordered pair): E = -sum B (e_i.e_j)^2
+    K4       four-spin (plaquette) constant (meV) on nearest-neighbour plaquettes
     D        nearest-neighbour DMI magnitude (meV)
     order    "ferro" or "afm" (reference signs; for "afm" give afm_signs per sublattice, or a
              checkerboard is used on bipartite lattices with one site per cell via a doubled cell)
@@ -98,7 +101,10 @@ def make_model(lattice="sc", a=3.0, J=(1.0,), D=0.0, dmi="interfacial", normal=(
             Dv = D * (np.cross(nvec, rh) if dmi == "interfacial" else rh)
             Jt = Jt + _skew(Dv)
         nu = [int(R[k]) % mesh[k] for k in range(3)]
-        pairs.append(dict(i=i, j=j, R=list(R), nu=nu, dist=d, vec=r.tolist(), J=Jt.tolist(), resid=0.0, degeneracy=1))
+        pr = dict(i=i, j=j, R=list(R), nu=nu, dist=d, vec=r.tolist(), J=Jt.tolist(), resid=0.0, degeneracy=1)
+        if Bq is not None and s < len(Bq) and Bq[s]:
+            pr["B"] = float(Bq[s])
+        pairs.append(pr)
     kax = np.array(K_axis, float) / np.linalg.norm(K_axis)
     Aion = -K * (np.outer(kax, kax) - np.eye(3) / 3)
     ref = np.array([0, 0, 1.0])
@@ -106,6 +112,7 @@ def make_model(lattice="sc", a=3.0, J=(1.0,), D=0.0, dmi="interfacial", normal=(
                 mesh=mesh, moments=(signs[:, None] * moment * ref[None, :]).tolist(), charges=[0.0] * ns,
                 refs=[ref.tolist()], full_tensor=True, A=[Aion.tolist()] * ns, mu=0.0, mag_pos=list(range(ns)),
                 lig_pos=[], pairs=pairs, corrections={}, lloyd=None, mae=None, symmetry=None,
+                four_spin=dict(K=float(K4)) if K4 else None,
                 model=dict(lattice=lattice, a=a, J=list(J), D=D, dmi=dmi, K=K, moment=moment, order=order))
 
 

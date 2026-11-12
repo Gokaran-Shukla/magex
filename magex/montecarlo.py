@@ -72,9 +72,13 @@ class MetropolisMC:
         dE = -2.0 * np.einsum("ij,ij->i", de, h) - MU_B * mu * (de @ self.sys.B)
         if self.sys.has_A:
             dE += np.einsum("ia,iab,ib->i", en, A, en) - np.einsum("ia,iab,ib->i", eo, A, eo)
+        if self.sys.has_higher:
+            e = self._e
+            dE += self.sys.local_higher_energy(idx, en, e) - self.sys.local_higher_energy(idx, eo, e)
         return dE
 
     def sweep(self, e):
+        self._e = e
         beta = 1.0 / (K_B * self.T) if self.T > 0 else np.inf
         flat = e.reshape(-1)
         for idx, Jc, A, mu in self.groups:

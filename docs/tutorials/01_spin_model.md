@@ -68,3 +68,17 @@ anisotropy along `K_axis`.
 
 `magex.spinmodel.mean_field_tc(uc)` returns T_MF = (2/3) λ_max[J(0)]/k_B.  Monte Carlo uses it to
 choose the temperature grid automatically; classical MC typically gives T_C ≈ 0.7–0.8 T_MF in 3D.
+
+## Higher-order interactions: biquadratic and four-spin
+
+    E_bq = −Σ_{i≠j} B_ij (e_i·e_j)²          (ordered pairs, like J)
+    E_4  = −K₄ Σ_plaquettes [(e_i·e_j)(e_k·e_l) + (e_j·e_k)(e_l·e_i) − (e_i·e_k)(e_j·e_l)]
+
+* **from first principles**: `biquadratic = "lloyd"` in `[spinmodel]` uses the finite-angle (Lloyd)
+  fits stored in results.json (`lloyd_shells` in `magex run`): for every fitted shell the isotropic J
+  is replaced by the bilinear constant of the fit and the biquadratic B is added;
+* **model Hamiltonians**: `Bq = [B1, B2, ...]` per shell and `K4` (unique nearest-neighbour plaquettes:
+  squares on the square lattice, the three rhombi per site on the triangular lattice) in `model = {...}`;
+* LLG, GNEB and Monte Carlo include both terms (the Monte Carlo colouring adds the plaquette
+  diagonals so simultaneous updates stay independent); gradients and local energies are checked
+  against finite differences in the tests.

@@ -43,6 +43,8 @@ class UnitCellModel:
     couplings: list                  # [(i, j, R(3,), J(3,3))] every ordered pair, i != j or R != 0
     A: np.ndarray                    # (ns,3,3)
     info: dict = field(default_factory=dict)
+    biquadratic: list = field(default_factory=list)   # [(i, j, R, B)]  E = -sum_{i!=j} B (e_i.e_j)^2
+    four_spin: float = 0.0           # K (meV): E = -K sum_plaquettes [(ij)(kl) + (jk)(li) - (ik)(jl)] (NN plaquettes)
 
     @property
     def nsites(self):
@@ -60,7 +62,7 @@ def _all_images(nu, mesh, fi, fj, cell, tol=1e-6):
 
 
 def load_results(path, J="mft", anisotropic=True, sia=True, rcut=None, jtol=1e-4,
-                 moments=None, axis=None):
+                 moments=None, axis=None, biquadratic=None):
     """Read a magex results.json and return a UnitCellModel of the magnetic sites.
 
     J            isotropic part from "mft", "bruno" or "downfold" (anisotropic part and DMI always
@@ -71,6 +73,9 @@ def load_results(path, J="mft", anisotropic=True, sia=True, rcut=None, jtol=1e-4
     jtol         drop couplings with max |J_ab| < jtol (meV)
     moments      override |M| per magnetic site (mu_B)
     axis         reference axis for the ordered state (default: last magex reference)
+    biquadratic  None | "lloyd": bilinear + biquadratic constants of the finite-angle (Lloyd) fits,
+                 applied to every pair of the fitted shells (isotropic J -> J_bilinear, + B (e.e)^2);
+                 per-pair "B" entries of model files are always read
     """
     if str(path).endswith(".gz"):
         import gzip
@@ -94,6 +99,15 @@ def load_results(path, J="mft", anisotropic=True, sia=True, rcut=None, jtol=1e-4
         if J not in (d.get("corrections") or {}):
             raise ValueError(f"results.json has no '{J}' couplings; available: {list(d['corrections'])}")
         corr = np.array(d["corrections"][J])
+    lloyd_shell = {}
+    if biquadratic == "lloyd":
+        if not d.get("lloyd"):
+            raise ValueError("results.json has no Lloyd fits (run magex with lloyd_shells > 0)")
+        pos0 = np.array(d["positions"], float)
+        for L in d["lloyd"]:
+            i, j, nu = L["pair"]
+            _, dist = _all_images(nu, d["mesh"], frac_all[i], frac_all[j], cell)
+            lloyd_shell[(d["symbols"][i], d["symbols"][j], round(dist, 3))] = (L["J_bilinear"], L["B"])
     raw = []
     for p in d["pairs"]:
         if p["i"] not in mp or p["j"] not in mp:
@@ -105,12 +119,18 @@ def load_results(path, J="mft", anisotropic=True, sia=True, rcut=None, jtol=1e-4
         if not anisotropic:
             Jt = np.trace(Jt) / 3 * np.eye(3)
         imgs, dist = _all_images(p["nu"], d["mesh"], frac_all[p["i"]], frac_all[p["j"]], cell)
-        raw.append((mp.index(p["i"]), mp.index(p["j"]), imgs, dist, Jt))
+        Bq = float(p.get("B", 0.0))
+        key = (d["symbols"][p["i"]], d["symbols"][p["j"]], round(dist, 3))
+        if key in lloyd_shell:
+            Jb, Bq = lloyd_shell[key]
+            Jt = Jt - np.trace(Jt) / 3 * np.eye(3) + Jb * np.eye(3)
+        raw.append((mp.index(p["i"]), mp.index(p["j"]), imgs, dist, Jt, Bq))
     dmin = min(r[3] for r in raw)
     if rcut is None:
         rcut = 2.0 * dmin
     couplings, J0_all, J0_kept, shells = [], 0.0, 0.0, set()
-    for i, j, imgs, dist, Jt in raw:
+    bq = []
+    for i, j, imgs, dist, Jt, Bq in raw:
         w = Jt / len(imgs)
         J0_all += s[i] * s[j] * np.trace(Jt) / 3
         if dist > rcut + 1e-6 or np.max(np.abs(Jt)) < jtol:
@@ -119,12 +139,16 @@ def load_results(path, J="mft", anisotropic=True, sia=True, rcut=None, jtol=1e-4
         shells.add(round(dist, 3))
         for R in imgs:
             couplings.append((i, j, np.array(R, int), w))
+            if Bq:
+                bq.append((i, j, np.array(R, int), Bq / len(imgs)))
     A = np.array(d["A"], float)[mp] if sia else np.zeros((len(mp), 3, 3))
     info = dict(source=os.path.abspath(path), J=J, rcut=float(rcut), nn_distance=float(dmin),
                 shells=[float(x) for x in sorted(shells)], ncouplings_per_cell=len(couplings),
                 J0_fraction=float(J0_kept / J0_all) if J0_all else 1.0, axis=ax.tolist())
+    info["biquadratic"] = bool(bq)
+    K4 = float((d.get("four_spin") or {}).get("K", 0.0))
     return UnitCellModel(cell, pos_all[mp], [d["symbols"][k] for k in mp], mom,
-                         s[:, None] * ax[None, :], s, couplings, A, info)
+                         s[:, None] * ax[None, :], s, couplings, A, info, bq, K4)
 
 
 def mean_field_tc(uc: UnitCellModel):
@@ -218,7 +242,155 @@ class SpinSystem:
         self.A = A
         self.bonds = np.concatenate(self.bonds) if self.bonds else np.zeros((0, 2), int)
         self.has_A = bool(np.max(np.abs(A)) > 0)
+        self._build_higher_order(cells, Lv, cidx, ns)
         self.set_field(field)
+
+    # -------------------------------------------------------------- higher-order interactions
+    def _map(self, cells, Lv, cidx, ns, i, j, R):
+        tgt = cells + np.asarray(R)[None, :]
+        ok = np.ones(self.ncell, bool)
+        for a in range(3):
+            if self.pbc[a]:
+                tgt[:, a] %= Lv[a]
+            else:
+                ok &= (tgt[:, a] >= 0) & (tgt[:, a] < Lv[a])
+        return cidx(cells[ok]) * ns + i, cidx(tgt[ok]) * ns + j
+
+    def _build_higher_order(self, cells, Lv, cidx, ns):
+        """Biquadratic bonds (ordered pairs) and four-spin plaquettes of nearest-neighbour bonds."""
+        src, dst, val = [], [], []
+        for (i, j, R, B) in self.uc.biquadratic:
+            a, b = self._map(cells, Lv, cidx, ns, i, j, R)
+            keep = a != b
+            src.append(a[keep]); dst.append(b[keep]); val.append(np.full(keep.sum(), B))
+        if src:
+            self.bq = (np.concatenate(src), np.concatenate(dst), np.concatenate(val))
+        else:
+            self.bq = None
+        self.K4 = float(self.uc.four_spin)
+        self.plaq = None
+        if self.K4:
+            self.plaq = self._plaquettes()
+            extra = np.concatenate([self.plaq[:, [0, 2]], self.plaq[:, [1, 3]]])
+            self.bonds = np.concatenate([self.bonds, extra])       # diagonals: needed for MC colouring
+        self.has_higher = self.bq is not None or self.plaq is not None
+        if self.has_higher:
+            self._local_tables()
+
+    def _plaquettes(self):
+        """Unique 4-cycles i-j-k-l of nearest-neighbour bonds (squares and rhombi)."""
+        P = self.positions
+        b = self.bonds
+        d = np.linalg.norm(self._minimg(P[b[:, 1]] - P[b[:, 0]]), axis=1)
+        nn = b[np.abs(d - d.min()) < 1e-3]
+        nbr = [set() for _ in range(self.N)]
+        for a, c in nn:
+            nbr[a].add(c)
+            nbr[c].add(a)
+        out = set()
+        for i in range(self.N):
+            for j in nbr[i]:
+                for k in nbr[j]:
+                    if k == i:
+                        continue
+                    for l in nbr[k]:
+                        if l in (i, j) or i not in nbr[l]:
+                            continue
+                        if k in nbr[i]:          # triangle, not a plaquette
+                            continue
+                        cyc = [i, j, k, l]
+                        r = cyc.index(min(cyc))
+                        cyc = cyc[r:] + cyc[:r]
+                        if cyc[1] > cyc[3]:
+                            cyc = [cyc[0], cyc[3], cyc[2], cyc[1]]
+                        out.add(tuple(cyc))
+        return np.array(sorted(out), int).reshape(-1, 4)
+
+    def _minimg(self, v):
+        V = np.array(self.L)[:, None] * self.uc.cell
+        f = v @ np.linalg.inv(V)
+        for a in range(3):
+            if self.pbc[a]:
+                f[:, a] -= np.round(f[:, a])
+        return f @ V
+
+    def _local_tables(self):
+        """Per-site incidence lists for local energies (Monte Carlo)."""
+        if self.bq is not None:
+            s, d, v = self.bq
+            order = np.argsort(s, kind="stable")
+            self._bq_ptr = np.searchsorted(s[order], np.arange(self.N + 1))
+            self._bq_dst, self._bq_val = d[order], v[order]
+        if self.plaq is not None:
+            P = self.plaq
+            lists = [[] for _ in range(self.N)]
+            for p, q in enumerate(P):
+                for r, site in enumerate(q):
+                    lists[site].append((p, r))
+            mx = max(len(x) for x in lists)
+            self._pl_id = -np.ones((self.N, mx), int)
+            self._pl_role = np.zeros((self.N, mx), int)
+            for site, x in enumerate(lists):
+                for c, (p, r) in enumerate(x):
+                    self._pl_id[site, c], self._pl_role[site, c] = p, r
+
+    @staticmethod
+    def _f4(a, b, c, d):
+        dot = lambda x, y: np.einsum("...a,...a->...", x, y)
+        return dot(a, b) * dot(c, d) + dot(b, c) * dot(d, a) - dot(a, c) * dot(b, d)
+
+    def higher_energy(self, e):
+        E = 0.0
+        if self.bq is not None:
+            s, d, v = self.bq
+            E -= np.sum(v * np.einsum("ia,ia->i", e[s], e[d]) ** 2)
+        if self.plaq is not None:
+            P = self.plaq
+            E -= self.K4 * np.sum(self._f4(e[P[:, 0]], e[P[:, 1]], e[P[:, 2]], e[P[:, 3]]))
+        return E
+
+    def higher_gradient(self, e):
+        g = np.zeros_like(e)
+        if self.bq is not None:
+            s, d, v = self.bq
+            c = (v * np.einsum("ia,ia->i", e[s], e[d]))[:, None]
+            np.add.at(g, s, -2 * c * e[d])
+            np.add.at(g, d, -2 * c * e[s])
+        if self.plaq is not None:
+            P = self.plaq
+            a, b, c, d = (e[P[:, k]] for k in range(4))
+            dot = lambda x, y: np.einsum("ia,ia->i", x, y)[:, None]
+            K = -self.K4
+            np.add.at(g, P[:, 0], K * (dot(c, d) * b + dot(b, c) * d - dot(b, d) * c))
+            np.add.at(g, P[:, 1], K * (dot(c, d) * a + dot(d, a) * c - dot(a, c) * d))
+            np.add.at(g, P[:, 2], K * (dot(a, b) * d + dot(d, a) * b - dot(b, d) * a))
+            np.add.at(g, P[:, 3], K * (dot(a, b) * c + dot(b, c) * a - dot(a, c) * b))
+        return g
+
+    def local_higher_energy(self, idx, en, e):
+        """Energy (meV) of all higher-order terms that contain site idx[k], with e[idx[k]] -> en[k]."""
+        out = np.zeros(len(idx))
+        if self.bq is not None:
+            p0, p1 = self._bq_ptr[idx], self._bq_ptr[idx + 1]
+            cnt = p1 - p0
+            if cnt.sum():
+                sel = np.concatenate([np.arange(a, b) for a, b in zip(p0, p1)])
+                owner = np.repeat(np.arange(len(idx)), cnt)
+                dots = np.einsum("ia,ia->i", en[owner], e[self._bq_dst[sel]])
+                # both orderings (i,j) and (j,i) are in the list: factor 2
+                np.add.at(out, owner, -2 * self._bq_val[sel] * dots**2)
+        if self.plaq is not None:
+            pid = self._pl_id[idx]
+            role = self._pl_role[idx]
+            valid = pid >= 0
+            P = self.plaq[np.where(valid, pid, 0)]                    # (n, mx, 4)
+            S = e[P]                                                  # (n, mx, 4, 3)
+            for r in range(4):
+                m = valid & (role == r)
+                S[m, r] = np.broadcast_to(en[:, None, :], S.shape[:2] + (3,))[m]
+            f = self._f4(S[..., 0, :], S[..., 1, :], S[..., 2, :], S[..., 3, :])
+            out += -self.K4 * np.sum(np.where(valid, f, 0.0), axis=1)
+        return out
 
     # -------------------------------------------------------------- field / energy
     def set_field(self, B):
@@ -233,6 +405,8 @@ class SpinSystem:
         g = -2.0 * self.exchange_field(e) - MU_B * self.mu[:, None] * self.B[None, :]
         if self.has_A:
             g += 2.0 * np.einsum("iab,ib->ia", self.A, e)
+        if self.has_higher:
+            g += self.higher_gradient(e)
         return g
 
     def effective_field(self, e):
@@ -244,6 +418,8 @@ class SpinSystem:
         E = -np.sum(e * self.exchange_field(e)) - MU_B * np.sum(self.mu * (e @ self.B))
         if self.has_A:
             E += np.einsum("ia,iab,ib->", e, self.A, e)
+        if self.has_higher:
+            E += self.higher_energy(e)
         return E / self.N if per_spin else E
 
     # -------------------------------------------------------------- configurations
@@ -323,5 +499,5 @@ def build_from_config(cfg, base="."):
             path = os.path.join(base, path)
     uc = load_results(path, J=sm.get("J", "mft"), anisotropic=sm.get("anisotropic", True),
                       sia=sm.get("sia", True), rcut=sm.get("rcut"), jtol=sm.get("jtol", 1e-4),
-                      moments=sm.get("moments"), axis=sm.get("axis"))
+                      moments=sm.get("moments"), axis=sm.get("axis"), biquadratic=sm.get("biquadratic"))
     return uc, sm

@@ -23,6 +23,8 @@
   velocity and skyrmion Hall angle); texture tracking in run stages
 - SOT efficiency from spin/orbital Hall conductivities (orbital torque via eta_LS, transparency,
   finite thickness); spin pumping (Delta alpha, DC spin current, ISHE voltage)
+- biquadratic and four-spin interactions in the atomistic spin model (LLG, GNEB, Monte Carlo);
+  biquadratic constants from the Lloyd finite-angle fits (`biquadratic = "lloyd"`)
 
 ## 0.2.0 (2026-11-12)
 

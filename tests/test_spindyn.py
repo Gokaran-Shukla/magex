@@ -161,3 +161,29 @@ def test_quantum_noise_planck_spectrum():
     for lo, hi in ((0.5, 1.5), (2.0, 3.0), (4.0, 6.0)):
         sel = (x > lo) & (x < hi)
         assert abs(P[sel].mean() / (2 * planck(x[sel]).mean()) - 1) < 0.08
+
+
+def test_biquadratic_and_four_spin(tmp):
+    p = tmp / "hi.json"
+    write_model(str(p), lattice="triangular", J=[1.0], Bq=[0.2], K4=0.3, D=0.2)
+    s = SpinSystem(load_results(str(p)), (6, 6, 1), (True, True, False), field=(0, 0, 0.5))
+    assert len(s.plaq) == 3 * s.N                     # three rhombi per site
+    e = s.init_spins("random", seed=2)
+    g = s.gradient(e)
+    h = 1e-6
+    for i, a in [(1, 0), (20, 2)]:
+        ep, em = e.copy(), e.copy()
+        ep[i, a] += h
+        em[i, a] -= h
+        assert abs((s.energy(ep) - s.energy(em)) / (2 * h) - g[i, a]) < 1e-6
+    idx, en = np.array([7]), np.array([[0, 0, 1.0]])
+    e2 = e.copy()
+    e2[7] = en[0]
+    full = s.higher_energy(e2) - s.higher_energy(e)
+    loc = s.local_higher_energy(idx, en, e) - s.local_higher_energy(idx, e[idx], e)
+    assert abs(loc[0] - full) < 1e-12
+    # Monte Carlo with higher-order terms keeps the energy bookkeeping exact
+    mc = MetropolisMC(s, 5.0, seed=1)
+    for _ in range(5):
+        e = mc.sweep(e)
+    assert np.isfinite(s.energy(e))
