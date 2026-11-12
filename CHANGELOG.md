@@ -31,6 +31,8 @@
 - micromagnetic extras: Oersted fields (Biot-Savart FFT), RKKY bilinear + biquadratic interlayer
   coupling across spacers, exchange bias, Voronoi grains (Ku/Ms/axis dispersion, grain-boundary
   exchange), parameter maps from .npy/OVF
+- Monte Carlo methods: parallel tempering (replica exchange) and Wang-Landau (1/t, numba kernel)
+  with density of states, entropy and free energy; `method = ...` in [mc]
 
 ## 0.2.0 (2026-11-12)
 

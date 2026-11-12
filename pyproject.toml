@@ -25,6 +25,7 @@ mpi = ["mpi4py"]
 sym = ["spglib>=2"]
 plot = ["matplotlib"]
 test = ["pytest"]
+fast = ["numba"]
 
 [project.urls]
 Homepage = "https://github.com/Gokaran-Shukla/magex"

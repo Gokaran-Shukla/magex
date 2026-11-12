@@ -187,3 +187,15 @@ def test_biquadratic_and_four_spin(tmp):
     for _ in range(5):
         e = mc.sweep(e)
     assert np.isfinite(s.energy(e))
+
+
+def test_wang_landau_and_parallel_tempering_agree(tmp):
+    from magex.advanced_mc import HAVE_NUMBA, parallel_tempering, wang_landau, wl_thermodynamics
+    if not HAVE_NUMBA:
+        pytest.skip("numba not installed")
+    s = _sys(tmp, lattice="sc", J=[1.0], L=(3, 3, 3))
+    wl = wang_landau(s, nbins=80, max_sweeps=400000, lnf_final=1e-6)
+    th = wl_thermodynamics(wl, [20.0, 45.0])
+    rows, _ = parallel_tempering(s, [20.0, 45.0], therm_sweeps=500, meas_sweeps=3000)
+    for a, r in zip(th, rows):
+        assert abs(a["E"] - r["E"]) < 0.1 * abs(r["E"]) + 5 * r["dE"]

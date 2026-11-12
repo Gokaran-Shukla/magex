@@ -63,3 +63,31 @@ quantum (S-finite) corrections can be added by rescaling T with (S+1)/S (Tyablik
 * use the same seed and more sweeps near T_C; `refine = true` adds points around the χ peak;
 * ultrathin films need `pbc = [true, true, false]` and anisotropy (Mermin–Wagner);
 * field sweeps: run at fixed T with `field = [...]` to obtain M(B) curves.
+
+## Parallel tempering and Wang–Landau
+
+```toml
+[mc]
+method = "parallel_tempering"   # replica exchange between neighbouring temperatures
+swap_every = 5                  # sweeps between swap attempts
+```
+
+Use it for frustrated magnets, spin glasses and first-order transitions, where a single-temperature
+Metropolis run freezes in a metastable state.  The swap acceptance per temperature pair is printed;
+aim for > 20 % by spacing the temperatures more closely near T_C.
+
+```toml
+[mc]
+method = "wang_landau"          # density of states g(E); thermodynamics at every T by reweighting
+wl_bins = 120
+wl_lnf = 1e-7                   # final modification factor (1/t algorithm)
+wl_flatness = 0.7
+wl_max_sweeps = 4000000
+# wl_window = [Emin, Emax]      # meV; default skips the vanishing g(E) next to the ground state
+```
+
+Outputs `dos_L*.csv` (ln g(E)), `thermo_L*.csv` (E, C, entropy S, free energy F vs T) and
+`wang_landau.png`.  The kernel is compiled with numba (`pip install magex[fast]`); single-spin
+Wang–Landau sampling of continuous spins converges for small systems (a few hundred spins), and
+the run warns when the final ln f is not reached.  Checked in the tests: Wang–Landau and parallel
+tempering energies agree; SC Heisenberg 4³ gives the C peak at 31.9 K (bulk T_C 33.5 K).

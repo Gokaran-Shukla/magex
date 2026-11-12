@@ -245,13 +245,26 @@ def run_mc_config(cfg, base=".", log=print):
     Ts = [float(t) for t in Ts]
     nproc = c["nproc"] or os.cpu_count()
 
+    method = c.get("method", "metropolis")
+    if method == "wang_landau":
+        return _run_wl(uc, sizes, pbc, B, Ts, c, outdir, label, Tmf, log)
+
     def run_grid(Tlist):
         jobs = [(uc, tuple(L), pbc, B, T, c, int(c["seed"]) + 1000 * k + j)
                 for k, L in enumerate(sizes) for j, T in enumerate(Tlist)]
         log(f"running {len(jobs)} Monte Carlo points ({len(sizes)} sizes x {len(Tlist)} temperatures) "
             f"on {min(nproc, len(jobs))} processes ...")
         t0 = time.time()
-        if nproc > 1 and len(jobs) > 1:
+        if method == "parallel_tempering":
+            from .advanced_mc import parallel_tempering
+            out = []
+            for k, L in enumerate(sizes):
+                system = SpinSystem(uc, tuple(L), pbc, B)
+                rows_L, swap = parallel_tempering(system, Tlist, c["therm_sweeps"], c["meas_sweeps"], c["sample_every"],
+                                                  int(c.get("swap_every", 5)), int(c["seed"]) + 1000 * k, c["init"],
+                                                  c["init_axis"], c["sigma"], c["overrelax"], log)
+                out += rows_L
+        elif nproc > 1 and len(jobs) > 1:
             with ProcessPoolExecutor(max_workers=min(nproc, len(jobs))) as ex:
                 out = list(ex.map(_point, jobs))
         else:
@@ -297,6 +310,58 @@ def run_mc_config(cfg, base=".", log=print):
         log("  note: a finite field smears the transition; the estimates above are crossover temperatures")
     log(f"Monte Carlo output written to {outdir}/")
     return dict(rows=rows, estimate=est, outdir=outdir)
+
+
+def _run_wl(uc, sizes, pbc, B, Ts, c, outdir, label, Tmf, log):
+    """Wang-Landau density of states per size; canonical thermodynamics on a fine T grid."""
+    from .advanced_mc import wang_landau, wl_thermodynamics
+    from .plotstyle import OKABE_ITO, mpl, savefig
+    Tf = np.linspace(min(Ts), max(Ts), 400)
+    res = []
+    for k, L in enumerate(sizes):
+        system = SpinSystem(uc, tuple(L), pbc, B)
+        wl = wang_landau(system, int(c.get("wl_bins", 120)), c.get("wl_window"), float(c.get("wl_lnf", 1e-7)),
+                         float(c.get("wl_flatness", 0.7)), c["sigma"], int(c.get("wl_max_sweeps", 2000000)),
+                         int(c["seed"]) + k, log)
+        th = wl_thermodynamics(wl, Tf)
+        res.append((L, wl, th))
+        np.savetxt(os.path.join(outdir, f"dos_L{'x'.join(map(str, L))}.csv"), np.column_stack([wl["E"], wl["lng"]]),
+                   delimiter=",", header="E_meV,ln_g", comments="")
+        np.savetxt(os.path.join(outdir, f"thermo_L{'x'.join(map(str, L))}.csv"),
+                   np.array([[r["T"], r["E"], r["C"], r["S"], r["F"]] for r in th]), delimiter=",",
+                   header="T_K,E_per_spin_meV,C_per_spin_kB,S_per_spin_kB,F_per_spin_meV", comments="")
+    lnf_req = float(c.get("wl_lnf", 1e-7))
+    conv = [r for r in res if r[1]["lnf"] <= 10 * lnf_req]
+    for L, wl, th in res:
+        if wl["lnf"] > 10 * lnf_req:
+            log(f"  WARNING: Wang-Landau not converged for L = {L} (ln f = {wl['lnf']:.1e}); increase "
+                "wl_max_sweeps or use a smaller system")
+    L, wl, th = (conv or res)[-1]
+    C = np.array([r["C"] for r in th])
+    Tc = float(Tf[np.argmax(C)])
+    est = dict(Tc=Tc, method=f"specific-heat peak of the Wang-Landau density of states (L = {L})", T_MF=Tmf,
+               label=label, sizes=[list(r[0]) for r in res])
+    with open(os.path.join(outdir, "tc_estimate.json"), "w") as f:
+        json.dump(est, f, indent=2, default=float)
+    plt = mpl()
+    fig, axs = plt.subplots(1, 2, figsize=(8.2, 3.2), constrained_layout=True)
+    for k, (L, wl, th) in enumerate(res):
+        lab = "×".join(str(x) for x in L if x > 1)
+        axs[0].plot(np.asarray(wl["E"]) / wl["N"], np.asarray(wl["lng"]) / wl["N"], color=OKABE_ITO[k], label=f"L = {lab}")
+        axs[1].plot(Tf, [r["C"] for r in th], color=OKABE_ITO[k], label=f"L = {lab}")
+    axs[0].set_xlabel("$E/N$ (meV)")
+    axs[0].set_ylabel(r"$\ln g(E)/N$")
+    axs[1].set_xlabel("$T$ (K)")
+    axs[1].set_ylabel("$C$ ($k_B$/spin)")
+    axs[1].axvline(Tc, color="k", ls="--", lw=0.9)
+    for ax in axs:
+        ax.legend()
+    fig.suptitle(f"Wang-Landau: {label} ~ {Tc:.1f} K (C peak)")
+    savefig(fig, os.path.join(outdir, "wang_landau.png"))
+    plt.close(fig)
+    log(f"{label} ~ {Tc:.1f} K from the specific-heat peak (Wang-Landau, L = {L}); T_MF = {Tmf:.1f} K")
+    log(f"Monte Carlo output written to {outdir}/")
+    return dict(est=est, wl=res)
 
 
 def _write(rows, est, outdir):
