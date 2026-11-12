@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "magex"
-version = "0.4.0"
+version = "0.5.0"
 description = "From Wannier90 Hamiltonians to devices: Green's-function exchange tensors, DMI and anisotropy, LSWT magnons, atomistic LLG spin dynamics, Monte Carlo T_C/T_N and finite-difference micromagnetics"
 readme = "README.md"
 license = {text = "MIT"}

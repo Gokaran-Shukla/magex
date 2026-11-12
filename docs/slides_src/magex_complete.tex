@@ -91,7 +91,7 @@
 \subtitle{Green's-function theory, full derivations, and what every routine of the code does}
 \author{Gokaran Shukla}
 \institute{KAUST, Thuwal, Saudi Arabia}
-\date{November 12, 2026}
+\date{November 12, 2026 (v0.5)}
 
 \begin{document}
 
@@ -151,7 +151,7 @@ energy functional, boundary conditions, demag, solvers, torques, AFM/altermagnet
 \end{plainbox}
 \begin{plainbox}{cC}\small
 \textbf{Part VII -- Implementation}\\
-multithreaded kernels, benchmarks vs VAMPIRE/UppASD/Spirit, conventions, validation
+multithreaded kernels, MPI, CUDA, benchmarks vs VAMPIRE/UppASD/Spirit, conventions, validation
 \end{plainbox}
 \end{columns}
 \end{frame}
@@ -1170,7 +1170,7 @@ path = "GXMGR"
 \begin{plainbox}{cR}
 \small\textbf{Simulation}
 \begin{itemize}\footnotesize
-\item atomistic LLG, MC, GNEB/HTST, SLD, LSD
+\item atomistic LLG, MC, GNEB/HTST, SLD, LSD; MPI and CUDA
 \item nanostructures, exact dipoles
 \item mumax3-class micromagnetics, LLB, AFM
 \end{itemize}
@@ -1179,7 +1179,7 @@ path = "GXMGR"
 \begin{plainbox}{cJ}
 \small\textbf{Quality}
 \begin{itemize}\footnotesize
-\item every formula tested (83 automated tests)
+\item every formula tested (90+ automated tests)
 \item same results as VAMPIRE, UppASD, Spirit
 \item faster per core than all three on CPU
 \end{itemize}
@@ -1187,7 +1187,7 @@ path = "GXMGR"
 \end{columns}
 \vspace{6pt}
 \begin{plainbox}{cM}
-\small\textbf{Next:} CUDA back end for the atomistic kernels and the demag FFT; MPI domain decomposition; anharmonic lattice potentials for spin--lattice dynamics; HTST beyond dense diagonalisation.
+\small\textbf{Next:} timings of the CUDA back end on GPU hardware; distributed system set-up for $10^8$-spin MPI runs; GPU dipolar fields; many-body (EAM) lattice potentials.
 \end{plainbox}
 \end{frame}
 

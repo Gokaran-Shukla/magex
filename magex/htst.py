@@ -326,10 +326,21 @@ def htst_rate_zero_modes(system, e_min, e_sp, T, n_zero=None, volumes=None, axes
     v = np.sqrt(np.sum(a**2 / es[stab]))
     logdet = 0.5 * (np.sum(np.log(em[~zm])) - np.sum(np.log(es[stab])))
     kT = K_B * T
-    pref = v / (2 * np.pi) * np.exp(logdet) * (2 * np.pi * kT) ** ((n0m - n0s) / 2) * (Vs / Vm) * 1e12
+    mult = _saddle_multiplicity(system, n0m, n0s, axes, volumes)
+    pref = mult * v / (2 * np.pi) * np.exp(logdet) * (2 * np.pi * kT) ** ((n0m - n0s) / 2) * (Vs / Vm) * 1e12
     dE = system.energy(e_sp) - system.energy(e_min)
     return dict(rate=float(pref * np.exp(-dE / kT)), prefactor=float(pref), dE=float(dE), n_zero=(n0m, n0s),
-                volumes=(Vm, Vs), eps_min=em, eps_sp=es)
+                volumes=(Vm, Vs), saddle_multiplicity=mult, eps_min=em, eps_sp=es)
+
+
+def _saddle_multiplicity(system, n0m, n0s, axes, volumes):
+    """Number of equivalent saddle points.  When the minimum is free to translate (zero modes) but the saddle
+    is pinned by the lattice, every lattice translation of the saddle is a separate escape channel: the
+    rate is multiplied by the number of cells in the translation plane, which makes it independent of
+    the simulation-box size."""
+    if volumes is None and n0m - n0s == len(axes) and n0m > 0:
+        return float(np.prod([system.L[a] for a in axes]))
+    return 1.0
 
 
 def mmf_sparse(system, e, max_iter=5000, tol=1e-6, step=0.05, kick=0.05, seed=1, log=None):
@@ -365,7 +376,141 @@ def htst_refined(system, e_min, e_sp_guess, T, tol=1e-9, log=None):
     from the (climbing-image) saddle guess, so that the harmonic eigenvalues are converged."""
     from .minimize import minimize
     e_min, _ = minimize(system, e_min, "lbfgs", tol=tol)
-    e_sp, info = (mmf if system.N <= 1500 else mmf_sparse)(system, e_sp_guess, tol=max(tol, 1e-8), kick=0.0)
-    if log:
-        log(f"  saddle refined by minimum-mode following: |F| = {info['max_force']:.1e}, lambda_1 = {info['lambda_1']:.3e}")
+    local = not system.has_higher and not any(type(t).__name__ == "Dipolar" for t in system.terms)
+    if system.N > 1500 and local:
+        e_sp, info = newton_stationary(system, e_sp_guess, tol=max(tol, 1e-9))
+        if log:
+            log(f"  saddle refined by Newton (sparse Hessian): |F| = {info['max_torque']:.1e} after {info['iterations']} steps")
+    else:
+        e_sp, info = mmf(system, e_sp_guess, tol=max(tol, 1e-8), kick=0.0)
+        if log:
+            log(f"  saddle refined by minimum-mode following: |F| = {info['max_force']:.1e}, lambda_1 = {info['lambda_1']:.3e}")
+    if system.N > 1500 and not system.has_higher and not system.terms:
+        return htst_rate_sparse(system, e_min, e_sp, T)          # sparse LU + Lanczos, scales to 10^5 spins
     return htst_rate_zero_modes(system, e_min, e_sp, T)
+
+
+# ============================================================================ HTST without dense diagonalisation
+def _logabsdet_sparse(H):
+    """log|det H| of a sparse matrix from its LU factors."""
+    from scipy.sparse.linalg import splu
+    lu = splu(H.tocsc(), permc_spec="MMD_AT_PLUS_A", diag_pivot_thresh=0.0)
+    return float(np.sum(np.log(np.abs(lu.U.diagonal()))) + np.sum(np.log(np.abs(lu.L.diagonal()))))
+
+
+def _low_modes_sparse(H, k, saddle=False):
+    """Lowest eigenpairs of a sparse Hessian: the most negative mode by Lanczos (it is well separated from
+    the stable spectrum at a first-order saddle), the modes near zero by shift-invert just below zero with
+    a fill-reducing sparse LU."""
+    import scipy.sparse as sp
+    from scipy.sparse.linalg import LinearOperator, eigsh, splu
+    n = H.shape[0]
+    scale = float(abs(H.diagonal()).max())
+    sig = -1e-3 * scale
+    lu = splu((H - sig * sp.identity(n)).tocsc(), permc_spec="MMD_AT_PLUS_A")
+    op = LinearOperator((n, n), matvec=lu.solve, dtype=float)
+    ev, V = eigsh(H, k=k, sigma=sig, which="LM", OPinv=op, tol=1e-10, ncv=max(4 * k, 40))
+    if not saddle:
+        o = np.argsort(ev)
+        return ev[o], V[:, o]
+    # the unstable mode: shift-invert at a large negative shift finds it first (gap to the stable spectrum)
+    sig2 = -0.5 * scale
+    lu2 = splu((H - sig2 * sp.identity(n)).tocsc(), permc_spec="MMD_AT_PLUS_A")
+    l1, v1 = eigsh(H, k=1, sigma=sig2, which="LM", tol=1e-10, ncv=20,
+                   OPinv=LinearOperator((n, n), matvec=lu2.solve, dtype=float))
+    if l1[0] < ev.min() - 1e-8 * scale:               # negative mode not among the near-zero modes
+        ev = np.concatenate([l1, ev[:-1]])
+        V = np.column_stack([v1[:, 0], V[:, :-1]])
+    o = np.argsort(ev)
+    return ev[o], V[:, o]
+
+
+def htst_rate_sparse(system, e_min, e_sp, T, k=8, alpha=0.0, zero_tol=1e-5, axes=(0, 1), volumes=None,
+                     rel_shift=1e-8):
+    """HTST rate for large systems (10^4-10^5 spins) without dense diagonalisation.
+
+    * determinants: log|det'(H)| = log|det(H + s)| - sum over the k lowest modes of the shift correction,
+      with log|det(H + s)| from a sparse LU and s = rel_shift x (lowest non-zero eigenvalue); the neglected
+      remainder is below N * rel_shift;
+    * dynamical factor: v^2 = sum_i eps_i (q_1 . G q_i)^2 = (P u)^T H_sp (P u),  u = G^T q_1/(1+alpha^2),
+      P removing q_1 and the zero modes -- only the unstable mode and the zero modes are needed;
+    * zero modes and their volumes as in htst_rate_zero_modes.
+    Requires a local (sparse) Hessian, i.e. no dipolar or higher-order terms."""
+    import scipy.sparse as sp
+    Hm, Hnm, _ = sparse_hessian(system, e_min)
+    Hs, Hns, _ = sparse_hessian(system, e_sp)
+    if Hnm is not None or Hns is not None:
+        raise NotImplementedError("sparse HTST needs a local Hessian (no dipolar / higher-order terms); "
+                                  "use htst_rate_zero_modes for small systems")
+    em, Vm = _low_modes_sparse(Hm, k)
+    es, Vs = _low_modes_sparse(Hs, k, saddle=True)
+    scale = float(abs(Hm.diagonal()).max())
+    zm = np.abs(em) < zero_tol * scale
+    zs = np.abs(es) < zero_tol * scale
+    neg = es < -zero_tol * scale
+    if neg.sum() != 1:
+        raise ValueError(f"saddle point has {int(neg.sum())} negative modes among the {k} lowest (expected 1)")
+    if (~zm).sum() == 0 or (~zs & ~neg).sum() == 0:
+        raise ValueError("increase k: no non-zero stable mode among the computed lowest modes")
+    n0m, n0s = int(zm.sum()), int(zs.sum())
+    I = sp.identity(Hm.shape[0], format="csr")
+
+    def logdet_prime(H, ev, drop):
+        lam1 = float(np.min(np.abs(ev[~drop & (np.abs(ev) > 0)])))
+        s = rel_shift * lam1
+        L = _logabsdet_sparse(H + s * I)
+        corr = 0.0
+        for x, d in zip(ev, drop):
+            corr += np.log(abs(x + s)) - (0.0 if d else np.log(abs(x)))
+        return L - corr
+    ldm = logdet_prime(Hm, em, zm)
+    lds = logdet_prime(Hs, es, zs | neg)
+    N = len(e_min)
+    q1 = Vs[:, int(np.where(neg)[0][0])]
+    Gm = GAMMA / (system.mu * MU_B) / (1 + alpha**2)
+    r = np.concatenate([2 * np.arange(N), 2 * np.arange(N) + 1])
+    c = np.concatenate([2 * np.arange(N) + 1, 2 * np.arange(N)])
+    GJ = sp.csr_matrix((np.concatenate([Gm, -Gm]), (r, c)), shape=(2 * N, 2 * N))
+    u = GJ.T @ q1
+    Z = Vs[:, zs | neg]
+    u = u - Z @ (Z.T @ u)
+    v = float(np.sqrt(max(u @ (Hs @ u), 0.0)))
+    if volumes is None and (n0m or n0s):
+        Vmin = zero_mode_volume(system, e_min, axes) if n0m else 1.0
+        Vsp = zero_mode_volume(system, e_sp, axes) if n0s else 1.0
+    else:
+        Vmin, Vsp = volumes if volumes is not None else (1.0, 1.0)
+    kT = K_B * T
+    mult = _saddle_multiplicity(system, n0m, n0s, axes, volumes)
+    pref = mult * v / (2 * np.pi) * np.exp(0.5 * (ldm - lds)) * (2 * np.pi * kT) ** ((n0m - n0s) / 2) * (Vsp / Vmin) * 1e12
+    dE = system.energy(e_sp) - system.energy(e_min)
+    return dict(rate=float(pref * np.exp(-dE / kT)), prefactor=float(pref), dE=float(dE), n_zero=(n0m, n0s),
+                volumes=(Vmin, Vsp), saddle_multiplicity=mult, eps_min=em, eps_sp=es)
+
+
+def newton_stationary(system, e, tol=1e-9, max_iter=50, max_step=0.1, log=None):
+    """Newton-Raphson on the tangent gradient with the sparse Hessian: converges quadratically to the
+    stationary point (minimum or saddle) nearest to a good guess, e.g. the GNEB climbing image."""
+    from scipy.sparse.linalg import splu
+    from .minimize import _retract
+    e = e.copy()
+    for it in range(max_iter):
+        H, Hn, T = sparse_hessian(system, e)
+        if Hn is not None:
+            raise NotImplementedError("Newton refinement needs a local (sparse) Hessian")
+        g = system.gradient(e)
+        gt = np.einsum("nka,na->nk", T, g).ravel()
+        gmax = float(np.max(np.linalg.norm(gt.reshape(-1, 2), axis=1)))
+        if log:
+            log(f"  newton {it:3d}  E = {system.energy(e):.8f}  max torque = {gmax:.2e}")
+        if gmax < tol:
+            break
+        s = 1e-10 * float(abs(H.diagonal()).max())
+        import scipy.sparse as sp
+        dq = -splu((H + s * sp.identity(H.shape[0])).tocsc()).solve(gt)
+        dm = float(np.max(np.linalg.norm(dq.reshape(-1, 2), axis=1)))
+        if dm > max_step:
+            dq *= max_step / dm
+        d = np.einsum("nk,nka->na", dq.reshape(-1, 2), T)
+        e = _retract(e, d)
+    return e, dict(iterations=it, max_torque=gmax, energy=float(system.energy(e)))

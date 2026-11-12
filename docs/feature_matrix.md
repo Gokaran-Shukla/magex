@@ -27,22 +27,23 @@ other codes summarise their documented main features and are not exhaustive; ver
 | Hysteresis, field cooling, FMR, annealing programs | ✓ | ✓ | ✓ | ~ | ✓ |
 | Minimisers (L-BFGS, NCG, VP) | ✓ | – | ~ | ✓ | ✓ (BB) |
 | GNEB with climbing image | ✓ | – | ✓ | ✓ | – |
-| HTST rates (with zero modes), eigenmodes, minimum-mode following | ✓ (sparse eigenmodes; HTST dense, ≲ 3000 spins) | – | – | ✓ | – |
+| HTST rates (with zero modes), eigenmodes, minimum-mode following | ✓ (sparse LU + Lanczos: 40 000 spins in 37 s) | – | – | ✓ | – |
 | S(q,ω), linear spin waves | ✓ | – | ✓ | ~ | ~ |
-| Spin–lattice dynamics | ~ (harmonic springs + J(r) on all shells, symplectic) | – | ✓ | – | – |
+| Spin–lattice dynamics | ✓ (harmonic, FPU, Morse, Lennard-Jones; J(r) on all shells; symplectic) | – | ✓ | – | – |
 | RPA / mean-field T_C, Callen–Callen scaling, LLB | ✓ | ~ | ~ | – | – |
 | Gilbert damping from first principles | ✓ | – | – | – | – |
 | Micromagnetics: demag, exchange, DMI, anisotropy, Zeeman | ✓ | – | – | – | ✓ |
 | Micromagnetics: two-sublattice AFM / altermagnets | ✓ | – | – | – | – |
 | Micromagnetics: magnetoelastic, custom terms, moving frame, edge smoothing | ✓ | – | – | – | ✓ |
-| GPU | ~ (experimental CuPy, micromagnetics) | ✓ (CUDA) | – | ✓ (CUDA) | ✓ |
-| MPI / distributed spin dynamics | ~ (MPI for exchange; processes for MC) | ✓ | ~ (OpenMP) | ~ (OpenMP) | – |
+| GPU | ~ (CUDA kernels for atomistic LLG/MC and cuFFT demag; verified in the CUDA simulator, not yet timed on a GPU) | ✓ (CUDA) | – | ✓ (CUDA) | ✓ |
+| MPI / distributed spin dynamics | ✓ (slab decomposition with halo exchange for LLG and MC; set-up replicated) | ✓ | ~ (OpenMP) | ~ (OpenMP) | – |
 | Graphical interface | – (figures, VTK/XYZ/OVF for ParaView/OVITO) | – | – | ✓ | ~ (web GUI) |
 
 **Speed and agreement.** On the same CPU, magex's atomistic LLG and Monte Carlo kernels are faster per core
 than serial VAMPIRE, OpenMP UppASD and CPU Spirit, and the same exported model gives the same m(T) in VAMPIRE,
 UppASD and magex and the same energy in Spirit ([benchmarks](benchmarks.md)).
 
-**Where the others are still ahead.** GPUs (VAMPIRE and Spirit CUDA back ends, mumax3) and distributed-memory
-MPI (VAMPIRE) for 10⁷–10⁸ spins; magex runs on the cores of one node.  UppASD's spin–lattice dynamics offers
-more lattice potentials.
+**Where the others are still ahead.** Proven GPU performance: VAMPIRE and Spirit have production CUDA back ends
+and mumax3 is GPU-native, while magex's CUDA kernels are verified but not yet benchmarked on hardware.
+VAMPIRE's MPI version distributes the system set-up as well and has been run on thousands of cores; magex
+replicates the set-up on every rank.

@@ -226,3 +226,63 @@ def test_uppasd_kfile_sign(tmp_path):
     k = open(out + "/kfile").read().split()
     assert float(k[2]) < 0 and abs(float(k[6]) ** 2 - 1) < 1e-9          # easy axis z: K1 < 0 in UppASD
     assert "anisotropy ./kfile" in open(out + "/inpsd.dat.template").read()
+
+
+def test_sparse_htst_matches_dense(tmp_path):
+    from magex.htst import htst_rate_sparse, htst_rate_zero_modes, mmf
+    from magex.minimize import minimize
+    s = SpinSystem(_uc(tmp_path, lattice="triangular", a=3.0, J=[2.0], D=1.0, K=0.2, moment=3.0), (16, 16, 1),
+                   (True, True, False), field=(0, 0, 6.0))
+    emin, _ = minimize(s, s.init_spins("skyrmion", radius=6.0), "lbfgs", tol=1e-9)
+    # collapsed-skyrmion saddle: shrink the minimum, then follow the softest mode
+    from magex.gneb import AtomisticAdapter, GNEB, slerp_path
+    ad = AtomisticAdapter(s)
+    neb = GNEB(ad, slerp_path(emin, s.init_spins("ferro"), 12), 1.0, True)
+    rng = np.random.default_rng(1)
+    for k in range(1, len(neb.x) - 1):
+        neb.x[k] = normalize(neb.x[k] + 0.02 * rng.normal(size=neb.x[k].shape))
+    neb.run(0.0, 3000, 1e-4)
+    esp, _ = mmf(s, neb.x[neb.result()["saddle_image"]], tol=1e-8, kick=0.0)
+    rd = htst_rate_zero_modes(s, emin, esp, 20.0)
+    rs = htst_rate_sparse(s, emin, esp, 20.0)
+    assert rd["n_zero"] == rs["n_zero"]
+    assert abs(rs["prefactor"] / rd["prefactor"] - 1) < 1e-6
+
+
+@pytest.mark.parametrize("pot", [dict(type="fpu", k3=-800.0, k4=2000.0), dict(type="morse", D=300.0, a=1.2),
+                                 dict(type="lj", eps=40.0)])
+def test_anharmonic_lattice_potentials(tmp_path, pot):
+    from magex.sld import SpinLattice
+    s = SpinSystem(_uc(tmp_path, lattice="sc", J=[1.0], K=0.1), (3, 3, 3))
+    rng = np.random.default_rng(0)
+    sl = SpinLattice(s, lam=0.5, k_spring=500.0, potential=pot, shells="all")
+    sl.u = rng.normal(size=sl.u.shape) * 0.05
+    e = normalize(s.ref + 0.4 * rng.normal(size=s.ref.shape))
+    F = sl.forces(e)
+    for i in (3, 17):
+        for a in range(3):
+            sl.u[i, a] += 1e-6
+            Ep = sl.energy(e)["total"]
+            sl.u[i, a] -= 2e-6
+            Em = sl.energy(e)["total"]
+            sl.u[i, a] += 1e-6
+            assert abs(-(Ep - Em) / 2e-6 - F[i, a]) < 1e-5
+    out = []
+    for dt in (2e-3, 1e-3):
+        rng = np.random.default_rng(0)
+        sl = SpinLattice(s, lam=0.5, k_spring=500.0, potential=pot, shells="all", dt=dt)
+        sl.v = rng.normal(size=sl.v.shape) * 2.0
+        e = normalize(s.ref + 0.4 * rng.normal(size=s.ref.shape))
+        _, tab = sl.run(e, int(0.6 / dt), every=int(0.02 / dt))
+        out.append(np.ptp(tab[:, 1]))
+    assert 3.3 < out[0] / out[1] < 4.7
+
+
+def test_demag_xp_path():
+    from magex.micromag.demag import Demag
+    from magex.micromag.mesh import Mesh
+    d = Demag(Mesh((16, 12, 2), (2e-9,) * 3))
+    M = np.random.default_rng(0).normal(size=(16, 12, 2, 3))
+    H = d.field(M)
+    d.xp = np                           # the code path used with xp = cupy after to_gpu()
+    assert np.abs(d.field(M) - H).max() == 0.0

@@ -66,12 +66,46 @@ conversions of the exporters (VAMPIRE J = 2 J_magex in joules; UppASD J = J_mage
   frequencies use shift-invert Lanczos: the k = 0 mode of a 22 500-spin film comes out at the exact Larmor
   frequency in 10 s.
 
+## Distributed memory (MPI)
+
+Slab decomposition with one halo exchange per Heun stage (`magex.mpi_spin`), 64×64×32 = 131 072 spins,
+one numba thread per rank:
+
+| ranks | LLG (ns/spin/step) | Monte Carlo (ns/spin/sweep) |
+|---|---|---|
+| 1 | 53.8 | 71.9 |
+| 2 | 30.4 (1.77×) | 39.1 (1.84×) |
+
+The distributed T = 0 trajectory equals the serial one to 2×10⁻¹⁵, and Monte Carlo energies agree within
+statistical errors.
+
+## HTST without dense diagonalisation
+
+Skyrmion collapse in films of growing size: log-determinants from sparse LU factors, the unstable and zero
+modes by shift-invert Lanczos, the dynamical factor from the unstable mode only, saddle polished by
+Newton steps on the sparse Hessian:
+
+| spins | prefactor (Hz) | time |
+|---|---|---|
+| 400 | 3.87×10¹³ (dense: same to 10⁻⁸) | 0.1 s |
+| 3 600 | 3.763×10¹³ | 0.6 s |
+| 14 400 | 3.763×10¹³ | 5.5 s |
+| 40 000 | 3.763×10¹³ | 37 s |
+
+The prefactor is independent of the box size once the lattice-pinned saddle is counted once per lattice
+translation (the minimum has two translational zero modes, the saddle none).
+
+## CUDA
+
+`magex.cuda_backend` (numba.cuda: fused Heun/Depondt kernels, Metropolis/heat-bath colour sweeps, per-thread
+xoroshiro128+) and the cuFFT demag path of the CuPy micromagnetic backend reproduce the CPU kernels exactly
+at T = 0 and the exact thermal averages, in numba's CUDA simulator.  No GPU was available, so there are no
+GPU timings yet.
+
 ## Where the others still lead
 
-* **GPUs**: VAMPIRE and Spirit have CUDA back ends and mumax3 is GPU-only; magex has no tested GPU path
-  (the CuPy micromagnetics backend is experimental).  On a single GPU, mumax3 will outrun magex's CPU
-  micromagnetics for large meshes.
-* **Distributed memory**: VAMPIRE's MPI decomposition scales to thousands of cores; magex is
-  shared-memory (threads) for spin dynamics and Monte Carlo.
-* **Mature workflows**: UppASD's spin–lattice dynamics has more lattice potentials, Spirit's GUI is
-  interactive, and all three have years of production use.
+* **GPUs**: VAMPIRE and Spirit have production CUDA back ends and mumax3 is GPU-native; magex's CUDA kernels
+  are verified in the simulator but have not been run or timed on a physical GPU.
+* **Very large MPI runs**: VAMPIRE also distributes the system set-up and has been used on thousands of
+  cores; magex distributes the dynamics but builds the full system on every rank.
+* **Maturity**: all three have years of production use and Spirit has an interactive GUI.

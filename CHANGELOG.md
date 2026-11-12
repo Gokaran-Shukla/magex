@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 (branch `dev-0.5`)
+
+- MPI domain decomposition for atomistic LLG and Monte Carlo (`magex.mpi_spin`, `python -m magex.mpi_spin`):
+  slab partition, halo exchange, same kernels as the threaded path; T = 0 trajectories identical to serial,
+  1.8× on 2 ranks
+- CUDA back end for the atomistic kernels (`magex.cuda_backend`, numba.cuda) and device-side demag FFT for
+  the CuPy micromagnetic backend; verified in the CUDA simulator (no GPU timings yet)
+- sparse HTST: log-determinants from sparse LU, unstable/zero modes by shift-invert Lanczos, dynamical factor
+  from the unstable mode only; Newton saddle refinement; saddle multiplicity for lattice-pinned saddles
+  (box-size independent prefactors); 40 000 spins in 37 s
+- anharmonic lattice potentials for spin–lattice dynamics: FPU (cubic + quartic), Morse, Lennard-Jones
+
 ## 0.4.0 — universal engine
 
 - atomistic structure builder `[structure]`: sphere / cylinder / cube / ellipsoid / truncated-octahedron
@@ -24,7 +36,7 @@
   RK4 / RK2 / Euler / Heun solvers, moving frame, OVF autosave and field maps
 - exporters translate `[structure]`, `[program]` and `[llg]` to VAMPIRE, UppASD and Spirit input; the mumax3
   exporter handles several regions, CSG shapes and the new terms
-- docs: complete 96-slide Beamer deck of the formalism (docs/magex_complete_formalism.pdf); tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
+- docs: complete 100-slide Beamer deck of the formalism (docs/magex_complete_formalism.pdf); tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
 - speed: multithreaded numba kernels (fused Heun/Depondt steps, ziggurat RNG on chunked xorshift streams,
   compact symmetry-reduced coupling storage, parallel Monte Carlo colour sweeps, fused micromagnetic local
   fields, optional single-precision demag); faster per core than VAMPIRE, UppASD and Spirit on the same CPU

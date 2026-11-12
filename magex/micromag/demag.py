@@ -129,15 +129,16 @@ class Demag:
         kw = {} if self.workers is None else dict(workers=self.workers)
         single = getattr(self, "single", False)
         if single and getattr(self, "_K32", None) is None:
-            self._K32 = self.K.astype(np.complex64)
+            self._K32 = self.K.astype("complex64")
         K = self._K32 if single else self.K
-        Mc = M.astype(np.float32) if single else M
+        Mc = M.astype("float32") if single else M
         Mk = [sfft.rfftn(Mc[..., c], s=self.fshape, axes=(0, 1, 2), **kw) for c in range(3)]
         xx, yy, zz, xy, xz, yz = K
         Hk = (xx * Mk[0] + xy * Mk[1] + xz * Mk[2],
               xy * Mk[0] + yy * Mk[1] + yz * Mk[2],
               xz * Mk[0] + yz * Mk[1] + zz * Mk[2])
-        out = np.empty(tuple(n) + (3,))
+        xp = getattr(self, "xp", np)                  # numpy, or cupy after Micromagnet.to_gpu()
+        out = xp.empty(tuple(n) + (3,))
         for c in range(3):
             out[..., c] = -sfft.irfftn(Hk[c], s=self.fshape, axes=(0, 1, 2), **kw)[:n[0], :n[1], :n[2]]
         return out

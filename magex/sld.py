@@ -26,7 +26,7 @@ AMU = 0.103642696            # meV ps^2 / A^2 per amu
 
 
 class SpinLattice:
-    def __init__(self, system, J0=None, lam=0.5, form="exp", rc=None, k_spring=1000.0, mass=55.845,
+    def __init__(self, system, J0=None, lam=0.5, form="exp", rc=None, k_spring=1000.0, mass=55.845, potential=None,
                  alpha=0.0, T_spin=0.0, eta=0.0, T_lattice=0.0, dt=1e-3, seed=1, integrator="auto", shells="nn"):
         """integrator: "symplectic" (default when alpha = 0 and T_spin = 0: time-reversible splitting with
         exact per-spin implicit-midpoint rotations over non-interacting colour groups, so that the coupled
@@ -54,6 +54,10 @@ class SpinLattice:
         self.lam, self.form = float(lam), form
         self.rc = float(rc) if rc else 1.5 * float(self.r0.max())
         self.k = float(k_spring)
+        # lattice pair potential V(r) per bond: {"type": "harmonic"} (k_spring), {"type": "morse", "D": meV, "a": 1/A},
+        # {"type": "lj", "eps": meV} (sigma = r0 / 2^(1/6): minimum at the reference bond length),
+        # {"type": "fpu", "k3": meV/A^3, "k4": meV/A^4} (k/2 x^2 + k3/3 x^3 + k4/4 x^4, x = r - r0)
+        self.pot = dict(type="harmonic") if potential is None else dict(potential)
         self.m = float(mass) * AMU
         self.u = np.zeros_like(P)                         # displacements (A)
         self.v = np.zeros_like(P)                         # velocities (A/ps)
@@ -86,6 +90,26 @@ class SpinLattice:
         x = np.clip(1 - r / self.rc, 0, None)
         return -3 * self.J0 * x**2 / self.rc / (1 - self.r0 / self.rc) ** 3
 
+    def pair(self, r):
+        """Lattice pair energy V(r) and dV/dr (meV, meV/A) for every bond."""
+        x = r - self.r0
+        t = self.pot.get("type", "harmonic")
+        if t == "harmonic":
+            return 0.5 * self.k * x**2, self.k * x
+        if t == "fpu":
+            k3, k4 = float(self.pot.get("k3", 0.0)), float(self.pot.get("k4", 0.0))
+            return 0.5 * self.k * x**2 + k3 / 3 * x**3 + k4 / 4 * x**4, self.k * x + k3 * x**2 + k4 * x**3
+        if t == "morse":
+            D, a = float(self.pot["D"]), float(self.pot["a"])
+            q = np.exp(-a * x)
+            return D * (1 - q) ** 2, 2 * D * a * q * (1 - q)
+        if t == "lj":
+            eps = float(self.pot["eps"])
+            sig = self.r0 / 2 ** (1 / 6)
+            s6 = (sig / r) ** 6
+            return 4 * eps * (s6 * s6 - s6) + eps, 4 * eps * (-12 * s6 * s6 + 6 * s6) / r
+        raise ValueError(f"unknown lattice potential '{t}'")
+
     def _geom(self):
         i, j = self.pairs[:, 0], self.pairs[:, 1]
         P = self.sys.positions + self.u
@@ -108,7 +132,7 @@ class SpinLattice:
         rh = d / r[:, None]
         ee = np.einsum("ia,ia->i", e[i], e[j])
         # dV/dr = k (r - r0) - 2 J'(r) e_i.e_j ;  F_j = -dV/dr rhat, F_i = +dV/dr rhat
-        dV = self.k * (r - self.r0) - 2 * self._dJ(r) * ee
+        dV = self.pair(r)[1] - 2 * self._dJ(r) * ee
         F = np.zeros_like(self.u)
         np.add.at(F, i, dV[:, None] * rh)
         np.add.at(F, j, -dV[:, None] * rh)
@@ -117,10 +141,11 @@ class SpinLattice:
     def energy(self, e):
         i, j, d, r = self._geom()
         ee = np.einsum("ia,ia->i", e[i], e[j])
-        Epot = 0.5 * self.k * np.sum((r - self.r0) ** 2) - 2 * np.sum((self._J(r) - self._J0full) * ee)
+        Vl = float(np.sum(self.pair(r)[0]))
+        Epot = Vl - 2 * np.sum((self._J(r) - self._J0full) * ee)
         Ekin = 0.5 * self.m * np.sum(self.v**2)
-        return dict(kinetic=float(Ekin), lattice=float(0.5 * self.k * np.sum((r - self.r0) ** 2)),
-                    spin=float(self.sys.energy(e)), coupling=float(Epot - 0.5 * self.k * np.sum((r - self.r0) ** 2)),
+        return dict(kinetic=float(Ekin), lattice=Vl,
+                    spin=float(self.sys.energy(e)), coupling=float(Epot - Vl),
                     total=float(Ekin + Epot + self.sys.energy(e)))
 
     def temperature_lattice(self):

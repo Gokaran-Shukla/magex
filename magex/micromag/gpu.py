@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import numpy as np
 
-_ARRAYS = ("Ms", "A", "D_int", "D_bulk", "Ku1", "Ku2", "Kc1", "alpha", "anisU", "anisC1", "anisC2", "region")
-_OPTIONAL = ("B_ext_cell", "oersted", "grain")
+_ARRAYS = ("Ms", "A", "D_int", "D_bulk", "Ku1", "Ku2", "Kc1", "Kc2", "Kc3", "B1", "B2", "alpha", "anisU", "anisC1",
+           "anisC2", "region")
+_OPTIONAL = ("B_ext_cell", "oersted", "grain", "strain", "geom", "frozen")
 
 
 def _cupy():
@@ -41,7 +42,9 @@ def to_gpu(system):
     if system.use_demag:
         d = system.demag                      # build on CPU, then move the kernel
         d.K = cp.asarray(d.K)
+        d._K32 = None
         d.workers = None
+        d.xp = cp                             # FFT convolution on the device (cuFFT via cupyx.scipy.fft)
     system.xp = cp
     system.invalidate()
     return system
@@ -55,7 +58,9 @@ def to_cpu(system):
     system.B_local = [(mk.get() if hasattr(mk, "get") else mk, fn) for mk, fn in system.B_local]
     if system.use_demag and system._demag is not None and hasattr(system._demag.K, "get"):
         system._demag.K = system._demag.K.get()
+        system._demag._K32 = None
         system._demag.workers = -1
+        system._demag.xp = np
     system.xp = np
     import scipy.fft
     try:

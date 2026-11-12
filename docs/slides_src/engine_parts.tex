@@ -305,6 +305,31 @@ $\mathcal S_h$: colour groups swept forward then backward with $h/2$, each spin 
 \takeaway{with the palindromic splitting the total energy error falls as $\Delta t^2$; the symplectic spin step conserves the spin energy four orders of magnitude better than Heun.}
 \end{frame}
 
+\begin{frame}{Anharmonic lattice potentials \src{sld.py: SpinLattice(potential=...)}}
+\begin{columns}[T]
+\column{0.52\textwidth}
+\small
+Bond potentials $V(r)$, $x = r - r_0$, minimum at the reference bond length:
+\[
+\begin{aligned}
+V_{\rm harm} &= \tfrac{\cJ k}{2}x^2\\
+V_{\rm FPU} &= \tfrac{\cJ k}{2}x^2 + \tfrac{\cJ{k_3}}{3}x^3 + \tfrac{\cJ{k_4}}{4}x^4\\
+V_{\rm Morse} &= \cJ D\big(1-e^{-\cJ a x}\big)^2\\
+V_{\rm LJ} &= 4\cJ\varepsilon\Big[\big(\tfrac{\sigma}{r}\big)^{12}-\big(\tfrac{\sigma}{r}\big)^{6}\Big]+\cJ\varepsilon,\ \ \sigma = r_0/2^{1/6}
+\end{aligned}
+\]
+forces $\bm F_i = \sum_j\big[V'(r_{ij}) - 2\cJ J'(r_{ij})\e_i\!\cdot\!\e_j\big]\hat{\bm r}_{ij}$.
+\column{0.46\textwidth}
+\begin{plainbox}{cK}
+\small The cubic term ($k_3<0$, Morse) makes the bonds expand on heating: thermal expansion and its coupling
+to the exchange, $J(r)$, enter the spin dynamics directly (magnetovolume effects, phonon--magnon damping).
+\end{plainbox}
+\begin{plainbox}{cJ}
+\small\textbf{Checks}: forces = $-\partial\mathcal H/\partial\bm u$ to $10^{-8}$; with the palindromic splitting the energy error falls by $4.0\times$ per halving of $\Delta t$ for every potential.
+\end{plainbox}
+\end{columns}
+\end{frame}
+
 % ---------------------------------------------------------------------
 \section{Part IV -- Statistical mechanics}
 % ---------------------------------------------------------------------
@@ -471,7 +496,42 @@ V = \Big(\prod_a L_a\Big)\sqrt{\det\big(\partial_a\e\cdot\partial_b\e\big)}
 \column{0.48\textwidth}
 \small
 \textbf{Checks}: biaxial macrospin: prefactor = $f_{\rm FMR}$ of the minimum (exact); adding a decoupled free spin with zero modes at both points leaves $k$ unchanged.\\[3pt]
-\textbf{Saddle polishing}: L-BFGS for the minimum, minimum-mode following from the climbing image ($|\bm F|\sim10^{-11}$) before diagonalisation.
+\textbf{Saddle polishing}: L-BFGS for the minimum; minimum-mode following (small systems) or Newton steps on the sparse Hessian (large systems) from the climbing image.
+\end{columns}
+\end{frame}
+
+\begin{frame}{HTST without dense diagonalisation \src{htst.py: htst\_rate\_sparse}}
+\begin{columns}[T]
+\column{0.55\textwidth}
+\small
+\textbf{Determinants.} With the $k$ lowest modes $\lambda_i$ from shift-invert Lanczos and a tiny shift $s$:
+\[
+\ln|{\det}'\cK H| = \ln|\det(\cK H+s)| - \!\!\sum_{i\le k,\ \rm drop}\!\!\ln|\lambda_i+s| - \!\!\sum_{i\le k,\ \rm keep}\!\!\ln\Big|1+\frac{s}{\lambda_i}\Big|
+\]
+$\ln|\det(\cK H + s)|$ from the diagonal of a fill-reducing sparse LU; neglected remainder $< N s/\lambda_{\rm min}$.\\[4pt]
+\textbf{Dynamical factor} from the unstable mode alone:
+\[
+v^2 = \sum_i\varepsilon_i(\bm q_1\!\cdot\!\cK G\bm q_i)^2 = (P\bm w)^T\cK H_{\rm sp}(P\bm w),\quad \bm w = \cK G^T\bm q_1
+\]
+($P$ removes $\bm q_1$ and the zero modes).
+\column{0.43\textwidth}
+\small
+\textbf{Saddle multiplicity.} A free skyrmion has two translational zero modes, the collapsed saddle is pinned by the lattice: each lattice translation is a separate channel, $k\to N_{\rm cells}\,k$.
+\vspace{3pt}
+
+\centering\footnotesize
+\begin{tabular}{rll}
+\toprule
+spins & prefactor (Hz) & time \\
+\midrule
+400 & $3.87\times10^{13}$ & 0.1 s \\
+3\,600 & $3.763\times10^{13}$ & 0.6 s \\
+14\,400 & $3.763\times10^{13}$ & 5.5 s \\
+40\,000 & $3.763\times10^{13}$ & 37 s \\
+\bottomrule
+\end{tabular}
+
+\raggedright sparse = dense to $10^{-8}$; box-size independent.
 \end{columns}
 \end{frame}
 
@@ -687,7 +747,66 @@ normals by the Marsaglia--Tsang ziggurat (128 layers): one 32-bit draw and one c
 MC: magex 80 (1 thread) / 50 (2 threads) ns per spin-sweep vs VAMPIRE 110.
 \column{0.48\textwidth}
 \footnotesize Spirit: same energy for a perturbed skyrmion to $3\times10^{-8}$; UppASD: same LLG relaxation (0.917 vs 0.918).
-GPUs and MPI clusters (VAMPIRE, Spirit CUDA, mumax3) remain ahead at $10^7$--$10^8$ spins.
+Production GPU codes (VAMPIRE, Spirit CUDA, mumax3) remain ahead until magex's CUDA kernels are timed on hardware.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Distributed memory: MPI domain decomposition \src{mpi\_spin.py}}
+\begin{columns}[T]
+\column{0.53\textwidth}
+\small
+Slabs along the longest supercell axis. Rank $r$ owns sites $\mathcal O_r$ and keeps ghosts
+$\mathcal G_r = \{j\notin\mathcal O_r : \J_{ij}\neq0,\ i\in\mathcal O_r\}$; local matrix = owned rows only.
+\[
+\underbrace{\text{noise + field + predictor}}_{\text{own sites}} \to \text{halo}(\tilde\e) \to \underbrace{\text{corrector}}_{\text{own}} \to \text{halo}(\e)
+\]
+Monte Carlo: every global colour group is split among the ranks, one halo exchange per colour, so the
+algorithm is exactly the serial one. Non-blocking point-to-point messages; energies and moments by
+\texttt{allreduce}.
+\column{0.45\textwidth}
+\centering\footnotesize
+\begin{tabular}{lcc}
+\toprule
+131\,072 spins & LLG & MC \\
+ & ns/spin/step & ns/spin/sweep\\
+\midrule
+1 rank & 53.8 & 71.9 \\
+2 ranks & 30.4 & 39.1 \\
+speed-up & 1.77 & 1.84 \\
+\bottomrule
+\end{tabular}
+
+\vspace{6pt}
+\begin{plainbox}{cJ}
+\raggedright\small $T=0$ trajectory with 2 ranks = serial to $2\times10^{-15}$; set-up replicated on every rank.
+\end{plainbox}
+\end{columns}
+\end{frame}
+
+\begin{frame}{CUDA back end \src{cuda\_backend.py, micromag/gpu.py}}
+\begin{columns}[T]
+\column{0.52\textwidth}
+\small
+\textbf{Atomistic} (numba.cuda): one thread per spin; device twins of the CPU kernels:
+\begin{itemize}\small
+\item coupling table (1, 4 or 9 numbers per bond type), on-site tensors, cubic/higher uniaxial terms
+\item fused Heun/Depondt predictor and corrector kernels; spins stay on the device
+\item Metropolis / heat-bath colour sweeps, \texttt{atomicAdd} acceptance counter
+\item per-thread xoroshiro128+ random streams
+\end{itemize}
+\textbf{Micromagnetics} (CuPy): all arrays on the device; the demag convolution runs through cuFFT, optionally in single precision.
+\column{0.46\textwidth}
+\begin{plainbox}{cK}
+\small\textbf{Verification} in numba's CUDA simulator:
+\begin{itemize}\small
+\item $T=0$ LLG trajectories equal to the CPU kernels ($10^{-16}$)
+\item Monte Carlo averages equal to the exact single-spin integral
+\item thermal LLG runs agree with the CPU solver within statistics
+\end{itemize}
+\end{plainbox}
+\begin{plainbox}{cJ}
+\small No GPU was available: speed on hardware is still to be measured.
+\end{plainbox}
 \end{columns}
 \end{frame}
 
@@ -729,6 +848,9 @@ integrators (Larmor) & analytic & $\mathcal O(\Delta t^2)$ \\
 Zhang--Li wall velocity & $(\beta/\alpha)u$ & 2\% \\
 FMR & Kittel & 0.1\% \\
 HTST prefactor (biaxial spin) & $f_{\rm FMR}$ & $10^{-12}$ \\
+sparse HTST (skyrmion) & dense HTST & $10^{-8}$ \\
+MPI LLG, 2 ranks ($T=0$) & serial trajectory & $2\times10^{-15}$ \\
+CUDA kernels (simulator) & CPU kernels & $10^{-16}$ \\
 eigenfrequencies of a FM ring & analytic magnons & $10^{-8}$ \\
 spin--lattice energy error & second order & ratio 4.0 per halving \\
 micromag. terms (Kc2, Kc3, B$_1$, B$_2$, inter-DMI, custom) & finite differences & $10^{-9}$ \\
