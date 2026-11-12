@@ -42,18 +42,13 @@ def dlangevin(x):
 
 
 def m_eq(T, Tc):
-    """Classical mean-field equilibrium magnetisation m_e(T) (Langevin)."""
+    """Classical mean-field equilibrium magnetisation m_e(T): root of m = L(3 Tc m / T)."""
     if T <= 0:
         return 1.0
     if T >= Tc:
         return 0.0
-    m = 1.0
-    for _ in range(200):
-        m_new = float(langevin(3 * Tc * m / T))
-        if abs(m_new - m) < 1e-13:
-            break
-        m = 0.5 * (m + m_new)
-    return m
+    from scipy.optimize import brentq
+    return float(brentq(lambda m: m - float(langevin(3 * Tc * m / T)), 1e-12, 1.0, xtol=1e-15, rtol=1e-14))
 
 
 def chi_par(T, Tc, mu_s):
