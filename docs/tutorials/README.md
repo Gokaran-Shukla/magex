@@ -23,6 +23,7 @@ own from a model Hamiltonian or a material library.
 | 8 | [Gilbert damping from first principles](08_damping.md) | α tensor vs broadening from the Wannier Hamiltonian, feeding LLG and micromagnetics | minutes (MPI) |
 | 9 | [Quantum corrections](09_quantum_statistics.md) | RPA T_C, (S+1)/S rescaling, quantum (Planck) thermostat for LLG | seconds |
 | 10 | [Magnon spectra from dynamics](10_magnon_spectra.md) | S(q, ω) from LLG vs LSWT; micromagnetic spin-wave dispersion, DMI non-reciprocity | 1 min |
+| 11 | [Energy barriers and lifetimes](11_energy_barriers.md) | GNEB: skyrmion collapse, MRAM thermal stability Δ, Arrhenius lifetimes | seconds–minutes |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

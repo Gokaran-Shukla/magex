@@ -1,0 +1,23 @@
+# Thermal stability of a perpendicular CoFeB/MgO MRAM free layer: switching barrier by GNEB
+#   magex micromag ... is not needed: run  magex gneb mram_barrier.toml
+#   Delta = E_b / k_B T (> 60 for 10-year retention)
+[mesh]
+n = [24, 24, 1]
+cell_nm = [2.0, 2.0, 1.2]
+
+[[region]]
+material = "CoFeB"            # Ms 1.1 MA/m, A 15 pJ/m, Ku 0.83 MJ/m^3
+shape = "disk"
+diameter_nm = 48
+
+[gneb]
+engine = "micromag"
+initial = {type = "uniform", direction = [0, 0, 1]}
+final = {type = "uniform", direction = [0, 0, -1]}
+images = 12
+temperature = 300.0
+attempt_time = 1e-9
+max_iter = 6000
+perturb = 0.001
+rel_tol = 1e-6
+outdir = "mram_gneb"

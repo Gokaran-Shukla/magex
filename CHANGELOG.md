@@ -12,6 +12,9 @@
 - `magex sqw`: dynamical structure factor S(q,w) from atomistic LLG with LSWT overlay
 - micromagnetic stage `dispersion`: spin-wave dispersion (sinc source, 2D FFT) with analytic
   thin-film overlay incl. interfacial-DMI non-reciprocity; local time-dependent fields (`B_local`)
+- `magex gneb`: geodesic nudged elastic band with climbing image for atomistic and micromagnetic
+  systems; BB minimiser on the spheres; Arrhenius lifetimes; examples for skyrmion collapse and
+  MRAM thermal stability
 
 ## 0.2.0 (2026-11-12)
 

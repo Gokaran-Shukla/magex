@@ -22,6 +22,7 @@ Python package. MPI/multithreaded on CPUs.**
 | **Exchange from DFT** | `magex run` | rotationally invariant LKAG (sum rule to 1e-15), full 3×3 J + DMI + SIA from one run, Bruno renormalisation, ligand downfolding, Lloyd finite-angle energies, LSWT magnons |
 | **Atomistic spin dynamics** | `magex llg` | stochastic LLG (Heun) with classical or quantum (Planck) thermostat, any lattice, full tensors, field off/on comparison, textures + topological charge, GIFs |
 | **Magnon spectra** | `magex sqw`, stage `dispersion` | dynamical structure factor S(q,ω) from LLG vs LSWT; micromagnetic spin-wave dispersion with DMI non-reciprocity |
+| **Energy barriers** | `magex gneb` | geodesic nudged elastic band with climbing image (atomistic and micromagnetic): skyrmion collapse, bit stability Δ, lifetimes |
 | **Monte Carlo** | `magex mc` | vectorised Metropolis + over-relaxation (graph colouring), automatic FM/AFM/ferri order parameter, Binder crossing → T_C / T_N |
 | **Micromagnetics** | `magex micromag` | OOMMF/mumax-style FD solver: Newell demag (FFT, PBC), exchange, interfacial/bulk DMI with chiral BCs, uniaxial/cubic anisotropy, SOT, RK45/Heun/BB, hysteresis, multilayers, OVF 2.0 |
 | **Multiscale bridge** | `magex params` | A, D, K, Ms from the atomistic tensors (validated to 0.05 %) |

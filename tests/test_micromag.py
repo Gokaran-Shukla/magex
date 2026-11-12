@@ -151,3 +151,19 @@ def test_dmi_nonreciprocal_spin_waves():
     for kk in (-0.3, 0.3):
         i = np.argmin(abs(k - kk))
         assert abs(f[np.argmax(P[i])] - fa[i]) < 2 * df
+
+
+def test_gneb_stoner_wohlfarth_barrier():
+    from magex.gneb import GNEB, MicromagAdapter, minimize as mn, slerp_path
+    mesh = Mesh((1, 1, 1), (5e-9,) * 3)
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=1e6, A=1e-11, Ku1=1e5)
+    K, V, Ms = 1e5, 1.25e-25, 1e6
+    for B in (0.0, 0.08):
+        s.set_field([0, 0, B])
+        ad = MicromagAdapter(s)
+        a, _, _ = mn(ad, np.array([[0.01, 0, -1.0]]), 1e-30)
+        b, _, _ = mn(ad, np.array([[0, 0, 1.0]]), 1e-30)
+        r = GNEB(ad, slerp_path(a, b, 9)).run(0.0, 3000, rel_tol=1e-6).result()
+        h = Ms * B / (2 * K)
+        assert abs(r["barrier_forward"] / (K * V * (1 - h) ** 2) - 1) < 1e-3

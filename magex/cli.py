@@ -5,6 +5,7 @@
   magex damping   input.toml   Gilbert damping tensor from the Wannier Hamiltonian (torque correlation, MPI)
   magex llg       input.toml   atomistic stochastic LLG spin dynamics + real-space textures (B on/off)
   magex sqw       input.toml   dynamical structure factor S(q,w) from LLG, compared with LSWT
+  magex gneb      input.toml   energy barriers (geodesic nudged elastic band), atomistic or micromagnetic
   magex mc        input.toml   Metropolis Monte Carlo: M(T), chi, C, Binder -> Curie / Neel temperature
   magex micromag  input.toml   finite-difference micromagnetics (thin films, nanostructures, SOT, loops)
   magex params    results.json atomistic -> micromagnetic parameters (Ms, A, D, K)
@@ -109,7 +110,7 @@ def _raw_cfg(path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="magex", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "mc", "micromag", "params", "tc", "model"])
+    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "gneb", "mc", "micromag", "params", "tc", "model"])
     ap.add_argument("config", help="input TOML (results.json for 'params', output path for 'model')")
     ap.add_argument("--field", type=float, nargs=3, default=None, help="llg: override B (T)")
     ap.add_argument("--J", default="mft", help="params: mft | bruno | downfold")
@@ -146,6 +147,10 @@ def main(argv=None):
         from .spectra import run_sqw_config
         cfg, base = _raw_cfg(a.config)
         run_sqw_config(cfg, base)
+    elif a.task == "gneb":
+        from .gneb import run_gneb_config
+        cfg, base = _raw_cfg(a.config)
+        run_gneb_config(cfg, base)
     elif a.task == "mc":
         from .montecarlo import run_mc_config
         cfg, base = _raw_cfg(a.config)
