@@ -401,6 +401,33 @@ to ≈ 34 K.  For bcc Fe the full-range couplings are essential: truncation at 5
 ground state (flagged by the J(q) check) and 8 Å gives T_C ≈ 650 K.
 
 
+### Universal engine (v0.4): VAMPIRE / UppASD / Spirit / mumax3 feature set
+
+One input format covers what is usually spread over four codes; see the
+[feature matrix](docs/feature_matrix.md) and tutorials [18](docs/tutorials/18_atomistic_structures.md),
+[19](docs/tutorials/19_programs.md) and [20](docs/tutorials/20_micromagnetics_mumax3.md).
+
+```bash
+magex program examples/universal/core_shell_particle.toml   # field cooling of a core-shell nanoparticle
+magex program examples/universal/hysteresis.toml            # Stoner-Wohlfarth loop
+magex program examples/universal/fmr.toml                   # Kittel resonance
+magex program examples/universal/cmc_anisotropy.toml        # K(T) by constrained Monte Carlo
+magex llg     examples/universal/zhang_li_wall.toml         # current-driven wall, v = (beta/alpha) u
+magex micromag examples/universal/micromag_mumax3_features.toml
+magex export  examples/universal/nanodot_dipolar.toml --to vampire   # also uppasd | spirit | mumax3
+```
+
+| area | what is in magex |
+|---|---|
+| structures | particles (sphere, cylinder, cube, ellipsoid, truncated octahedron), core–shell, multilayers, alloys, vacancies, roughness, pinning, interface exchange, temperature profiles |
+| energy terms | exchange tensors + DMI, biquadratic, four-spin, quadruplets, single-ion, cubic, higher uniaxial, Néel surface, exact FFT dipolar |
+| dynamics | Heun, Depondt, SIB, RK4; classical or quantum thermostat; Zhang–Li STT, SOT, Slonczewski; two-temperature model; spin–lattice dynamics |
+| Monte Carlo | Metropolis (Gaussian, uniform, Hinzke–Nowak), heat bath, over-relaxation, parallel tempering, Wang–Landau, constrained MC, longitudinal fluctuations |
+| landscapes | L-BFGS, NCG, VP minimisers; GNEB + climbing image; HTST rates; eigenmodes; minimum-mode following |
+| programs | hysteresis, field cooling, annealing, FMR, K(T), T_C / T_N, S(q,ω), LSWT |
+| micromagnetics | CSG shapes, edge smoothing, Kc1–3, magnetoelastic, frozen spins, inter-region DMI, custom terms, RK45/RK23/RK4/Heun/Euler, moving frame, autosave, AFM/altermagnets, LLB |
+| output | CSV, NPZ, VTK, extended XYZ, OVF 2.0; exporters to VAMPIRE, UppASD, Spirit, mumax3 |
+
 ## Repository layout
 
 ```

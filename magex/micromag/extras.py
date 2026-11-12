@@ -33,8 +33,8 @@ def oersted_field(mesh, J):
     with np.errstate(divide="ignore", invalid="ignore"):
         inv3 = np.where(R > 0, 1 / R**3, 0.0)
     K = np.stack([X * inv3, Y * inv3, Z * inv3])            # (3, ...) vector kernel r/|r|^3
-    Kf = [np.fft.rfftn(K[c], s=shape) for c in range(3)]
-    Jf = [np.fft.rfftn(J[..., c], s=shape) for c in range(3)]
+    Kf = [np.fft.rfftn(K[c], s=shape, axes=(0, 1, 2)) for c in range(3)]
+    Jf = [np.fft.rfftn(J[..., c], s=shape, axes=(0, 1, 2)) for c in range(3)]
     pre = MU0 / (4 * np.pi) * mesh.V
     # (J x r)_a = eps_abc J_b r_c  ->  B = pre * (J * K) cross-convolution
     B = np.zeros(n + (3,))

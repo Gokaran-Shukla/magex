@@ -314,3 +314,31 @@ def test_csg_volume_fraction_and_moving_frame():
     sel = P[:, 0] > 0.5e-9
     v = np.polyfit(P[sel, 0], P[sel, 1], 1)[0]
     assert fr.shift < -15 and abs(abs(v) / (GAMMA_LL * np.sqrt(1.3e-11 / 5e5) * 0.02 / 0.5) - 1) < 0.05
+
+
+def test_exporters_translate_structure_and_programs(tmp):
+    from magex.interop import export_mumax3, export_spirit, export_uppasd, export_vampire
+    p = tmp / "m.json"
+    write_model(str(p), lattice="sc", J=[1.0], K=0.1)
+    cfg = dict(structure=dict(shape="sphere", size=20.0, dipolar=True),
+               program=dict(type="hysteresis", Bmax=2.0, npts=21, direction=[0, 0, 1]),
+               llg=dict(alpha=0.1, dt=1e-3, steps=100, field=[0, 0, 1.0], stt=dict(u=[10, 0, 0], beta=0.1)))
+    v = open(export_vampire(str(p), str(tmp / "v"), cfg=cfg) + "/input").read()
+    assert "create:sphere" in v and "dimensions:particle-size = 4.0000 !nm" in v
+    assert "dipole:solver = tensor" in v and "sim:program = hysteresis-loop" in v
+    u = open(export_uppasd(str(p), str(tmp / "u"), cfg=cfg) + "/inpsd.dat.template").read()
+    assert "do_dip 1" in u and "stt A" in u
+    sp = open(export_spirit(str(p), str(tmp / "s"), cfg=cfg) + "/input.cfg").read()
+    assert "ddi_method fft" in sp and "external_field_magnitude 1.0" in sp
+    mm = dict(mesh=dict(n=[32, 32, 2], cell_nm=[2, 2, 1]),
+              region=[dict(Ms=8e5, A=1e-11, Kc2=1e3, shape="union",
+                           shapes=[dict(shape="disk", diameter_nm=20, center_nm=[-5, 0]),
+                                   dict(shape="sphere", diameter_nm=10)]),
+                      dict(Ms=6e5, A=1e-11, shape="cuboid", size_nm=[4, 4, 1], frozen=True)],
+              inter_dmi=[dict(regions=[0, 1], D=1e-3)],
+              stage=[dict(type="run", time_ns=0.1, solver="rk23", moving_frame=True, autosave_ps=10)])
+    t = open(export_mumax3(mm, str(tmp / "a.mx3"))).read()
+    for key in ("Circle(20e-9).Transl(-5e-9, 0e-9, 0e-9).Add(Ball(10e-9))", "Kc2.SetRegion(0, 1000)",
+                "FrozenSpins.SetRegion(1, 1)", "ext_InterDind(0, 1, 0.001)", "SetSolver(3)", "ext_centerWall(2)",
+                "AutoSave(m, 10e-12)", "Cuboid(4e-9, 4e-9, 1e-9)"):
+        assert key in t, key

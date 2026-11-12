@@ -47,6 +47,14 @@ jobs:
           magex mc cri3_mc.toml
           magex tc ../../validation_runs/CrI3_atomic_soc/results.json.gz
           magex gneb skyrmion_gneb.toml
+          cd ../universal
+          sed -i 's/^npts = .*/npts = 7/; s/^steps = .*/steps = 2000/; s/^meas = .*/meas = 100/; s/^therm = .*/therm = 50/' *.toml
+          magex program hysteresis.toml
+          magex program fmr.toml
+          magex program cmc_anisotropy.toml
+          magex program nanodot_dipolar.toml
+          for t in vampire uppasd spirit; do magex export nanodot_dipolar.toml --to $t; done
+          magex export micromag_mumax3_features.toml --to mumax3
 
   mpi:
     runs-on: ubuntu-latest

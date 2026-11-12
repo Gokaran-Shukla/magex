@@ -200,7 +200,13 @@ def main(argv=None):
         else:
             fn = {"vampire": interop.export_vampire, "uppasd": interop.export_uppasd,
                   "spirit": interop.export_spirit}[a.to]
-            out = fn(a.config, a.outdir or f"{a.to}_input", J=a.J, rcut=a.rcut)
+            if a.config.endswith(".toml"):          # full magex set-up: model + structure/program/llg translated
+                cfg, base = _raw_cfg(a.config)
+                res = cfg.get("spinmodel", {}).get("results", "magex_results/results.json")
+                res = res if os.path.isabs(res) else os.path.join(base, res)
+                out = fn(res, a.outdir or f"{a.to}_input", J=a.J, rcut=a.rcut, cfg=cfg)
+            else:
+                out = fn(a.config, a.outdir or f"{a.to}_input", J=a.J, rcut=a.rcut)
         print(f"{a.to} input written to {out}")
     elif a.task == "model":
         from .models import write_model

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0 (in development, branch `dev-0.4`) — universal engine
+
+- atomistic structure builder `[structure]`: sphere / cylinder / cube / ellipsoid / truncated-octahedron
+  particles, core–shell, multilayers, random alloys, vacancies, surface roughness, pinned spins, per-material
+  moments, anisotropy, damping and temperature, interface exchange scaling, temperature profiles
+- extra energy terms: exact FFT dipole–dipole interaction, cubic and higher-order uniaxial anisotropy,
+  Néel surface anisotropy, generic four-spin quadruplets (LLG, Monte Carlo, minimisers, GNEB)
+- initial textures: spirals, (anti)skyrmions and skyrmion lattices with automatic helicity, bubbles,
+  hopfions, domain walls
+- atomistic LLG: Depondt, SIB, RK4 and Euler integrators; Zhang–Li STT on arbitrary lattices; SOT /
+  Slonczewski fields; site-resolved temperature and damping; two-temperature model
+- Monte Carlo: heat-bath, uniform and Hinzke–Nowak moves; constrained Monte Carlo with torque curves and K(T);
+  longitudinal spin fluctuations
+- `magex program`: hysteresis, field cooling, annealing, minimisation, FMR, constrained MC, eigenmodes, LSF
+- minimisers: L-BFGS (tangent space, geodesic retraction), nonlinear CG, velocity projection
+- harmonic analysis: Hessian, LLG eigenfrequencies, HTST rates, minimum-mode following
+- spin–lattice dynamics with bond-length dependent exchange and Langevin lattice thermostat
+- observables: resolved magnetisation, chirality, S(q), C(r), autocorrelation; VTK, extended XYZ and
+  atomistic OVF output
+- micromagnetics (mumax3 feature set): CSG 3D shapes and boolean operations, edge smoothing, Kc2/Kc3,
+  magnetoelastic coupling, frozen spins, inter-region DMI, custom field and energy expressions, RK23 /
+  RK4 / RK2 / Euler / Heun solvers, moving frame, OVF autosave and field maps
+- exporters translate `[structure]`, `[program]` and `[llg]` to VAMPIRE, UppASD and Spirit input; the mumax3
+  exporter handles several regions, CSG shapes and the new terms
+- docs: tutorials 18–20, feature matrix against VAMPIRE, UppASD, Spirit and mumax3
+
 ## 0.3.0 (in development, branch `dev-0.3`)
 
 - packaging: PyPI trusted-publishing workflow, conda recipe, ReadTheDocs/MkDocs site, executed notebooks,

@@ -142,7 +142,7 @@ class RK45:
                     f"<m> = ({mm[0]: .4f},{mm[1]: .4f},{mm[2]: .4f})  steps {self.nsteps}")
         rec(sysm.t, m, B, force=True)
         if log:
-            log(f"    RK45: {self.nsteps} steps ({self.nreject} rejected) in {time.time() - wall:.1f} s, "
+            log(f"    {self.method.upper()}: {self.nsteps} steps ({self.nreject} rejected) in {time.time() - wall:.1f} s, "
                 f"t = {sysm.t * 1e9:.4f} ns")
         return m, np.array(rec.rows)
 

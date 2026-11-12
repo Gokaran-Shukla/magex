@@ -1,0 +1,11 @@
+# Monte Carlo with longitudinal spin fluctuations (variable moment length)
+[spinmodel]
+results = "uniaxial_sc.json"
+supercell = [8, 8, 8]
+pbc = [true, true, true]
+
+[program]
+type = "lsf"
+temperatures = [2.0, 15.0, 30.0, 45.0, 60.0]
+b = 2.0
+sweeps = 1500

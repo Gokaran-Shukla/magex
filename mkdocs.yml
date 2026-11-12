@@ -31,5 +31,9 @@ nav:
       - 15 Finite temperature / LLB: tutorials/15_temperature_llb.md
       - 16 Performance: tutorials/16_performance.md
       - 17 Interoperability: tutorials/17_interoperability.md
+      - 18 Structures and extra terms: tutorials/18_atomistic_structures.md
+      - 19 Programs, integrators, HTST: tutorials/19_programs.md
+      - 20 mumax3-style micromagnetics: tutorials/20_micromagnetics_mumax3.md
       - Conventions: tutorials/conventions.md
+  - Feature matrix: feature_matrix.md
   - Notebooks: notebooks.md

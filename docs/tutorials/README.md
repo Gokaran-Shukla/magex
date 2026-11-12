@@ -30,6 +30,9 @@ own from a model Hamiltonian or a material library.
 | 15 | [Finite temperature: Callen–Callen and LLB](15_temperature_llb.md) | A(T), K(T), Ms(T) from mean field or Monte Carlo; LLB + two-temperature model, ultrafast demagnetisation | 1 min |
 | 16 | [Performance: threads, MPI, GPU, restarts](16_performance.md) | parallel options, CuPy backend (experimental), checkpoint/restart | – |
 | 17 | [Interoperability](17_interoperability.md) | TB2J import; VAMPIRE, UppASD, Spirit, mumax³ export | seconds |
+| 18 | [Structures and extra terms](18_atomistic_structures.md) | particles, core-shell, alloys, defects, dipolar, cubic/surface anisotropy, pinning, textures | seconds–minutes |
+| 19 | [Programs, integrators, HTST](19_programs.md) | hysteresis, FMR, field cooling, constrained MC, LSF, minimisers, eigenmodes, HTST, spin–lattice | seconds–minutes |
+| 20 | [mumax3-style micromagnetics](20_micromagnetics_mumax3.md) | CSG shapes, edge smoothing, Kc2/Kc3, magnetoelastic, custom terms, solvers, moving frame | minutes |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

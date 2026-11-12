@@ -20,3 +20,4 @@ examples/micromag/*_out/
 examples/micromag/*.log
 examples/spindyn/*/
 examples/spindyn/*.log
+examples/universal/*_out/

@@ -1,0 +1,9 @@
+[spinmodel]
+results = "uniaxial_sc.json"
+supercell = [6, 6, 6]
+pbc = [true, true, true]
+[program]
+type = "hysteresis"
+Bmax = 3.0
+npts = 31
+direction = [0, 0, 1]

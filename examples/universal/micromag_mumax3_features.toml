@@ -1,0 +1,34 @@
+[mesh]
+n = [40, 32, 2]
+cell_nm = [3, 3, 1]
+[[region]]
+material = "Co/Pt"
+shape = "union"
+shapes = [{shape="disk", diameter_nm=60, center_nm=[-20,0]}, {shape="disk", diameter_nm=60, center_nm=[20,0]}]
+Kc2 = 1e3
+frozen = false
+edge_smooth = 4
+[[region]]
+Ms = 6e5
+A = 1e-11
+shape = "cylinder"
+diameter_nm = 20
+height_nm = 1
+center_nm = [0, 0, -0.5]
+frozen = true
+[[inter_dmi]]
+regions = [0, 1]
+D = 1e-3
+[magnetoelastic]
+strain = [1e-3, 0, 0, 0, 0, 0]
+B1 = -1e7
+[field]
+B = [0, 0, 0.05]
+[[stage]]
+type = "relax"
+[[stage]]
+type = "run"
+time_ns = 0.02
+solver = "rk23"
+autosave_ps = 5
+save_fields = ["demag"]

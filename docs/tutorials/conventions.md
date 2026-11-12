@@ -18,7 +18,11 @@ Effective field  `B_i = −(1/(μ_B μ_i)) ∂E/∂e_i`  (tesla).
 
     de_i/dt = −γ/(1+α²) [ e_i × B_i + α e_i × (e_i × B_i) ],   ⟨b b⟩ = 2αk_BT/(γ μ_i μ_B Δt)
 
-Stochastic Heun integrator (Stratonovich), renormalised after each stage.
+Stochastic Heun integrator (Stratonovich), renormalised after each stage (default; also Depondt, SIB, RK4, Euler).
+
+Extra atomistic terms (`[structure]`): cubic `Kc Σ a_i²a_j²`, uniaxial `−K2 (e·u)⁴ − K3 (e·u)⁶`, Néel surface
+`(k_s/2) Σ_nn (e·r̂)²`, quadruplets `−K[(e_i·e_j)(e_k·e_l) + (e_j·e_k)(e_l·e_i) − (e_i·e_k)(e_j·e_l)]`, and dipolar
+`−(1/2) Σ_i μ_i μ_B e_i·B_dip,i` with all pairs counted once.
 
 ## Monte Carlo
 

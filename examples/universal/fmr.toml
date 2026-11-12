@@ -1,0 +1,7 @@
+[spinmodel]
+results = "uniaxial_sc.json"
+supercell = [4, 4, 4]
+[program]
+type = "fmr"
+field = [0, 0, 1.0]
+steps = 40000

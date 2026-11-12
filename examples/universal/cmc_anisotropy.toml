@@ -1,0 +1,8 @@
+[spinmodel]
+results = "uniaxial_sc.json"
+supercell = [6, 6, 6]
+[program]
+type = "cmc"
+temperatures = [2.0, 10.0, 20.0]
+therm = 300
+meas = 600

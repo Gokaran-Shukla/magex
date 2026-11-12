@@ -1,0 +1,25 @@
+# Core-shell nanoparticle with an antiferromagnetically coupled interface, cubic core anisotropy,
+# Neel surface anisotropy on the shell and full dipolar interaction: field-cooling program.
+[spinmodel]
+results = "uniaxial_sc.json"
+supercell = [14, 14, 14]
+pbc = [false, false, false]
+
+[structure]
+shape = "sphere"
+size = 20.0                       # radius (A)
+core_shell = {radius = 12.0, core = "core", shell = "shell"}
+materials = [
+  {name = "core", Kc = 0.02},
+  {name = "shell", moment_scale = 0.7, ks = 0.05},
+]
+exchange_scale = [[1, 1, 1], [1, 1, -0.3], [1, -0.3, 0.6]]    # rows/cols: bulk, core, shell
+dipolar = true
+
+[program]
+type = "field_cooling"
+T_start = 60.0
+T_end = 1.0
+nT = 12
+sweeps = 400
+field = [0, 0, 1.0]
