@@ -101,3 +101,53 @@ def test_bridge_spiral_energy(tmp_path):
         return tot * 1.602176634e-22
     for q in (2e8, -2e8):
         assert abs((E(q) - E(0)) / V / (par["A"] * q * q + par["D_int"] * q) - 1) < 2e-3
+
+
+def test_spin_wave_dispersion_matches_analytic():
+    from magex.spectra import analytic_film_dispersion, micromag_dispersion
+    mesh = Mesh((64, 1, 1), (1e-9, 1e-9, 1e-9), pbc=(True, False, False))
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=5.8e5, A=1.5e-11, Ku1=8e5, alpha=0.002)
+    k, f, P, _ = micromag_dispersion(s, s.init("uniform"), time_ns=0.1, fmax_GHz=800, B_amp=1e-3)
+    fa = analytic_film_dispersion(s, k)
+    df = f[1] - f[0]
+    for kk in (0.1, 0.3, 0.5):
+        i = np.argmin(abs(k - kk))
+        assert abs(f[np.argmax(P[i])] - fa[i]) < 1.5 * df
+
+
+def test_sqw_peaks_follow_lswt(tmp_path):
+    from magex.llg import LLGSolver
+    from magex.models import write_model
+    from magex.spectra import commensurate_path, lswt_bands, structure_factor
+    from magex.spinmodel import SpinSystem, load_results
+    p = str(tmp_path / "chain.json")
+    write_model(p, lattice="chain", J=[1.0], K=0.05, moment=2.0)
+    uc = load_results(p)
+    sysm = SpinSystem(uc, (64, 1, 1), (True, False, False))
+    q, _ = commensurate_path(["G", "X"], dict(G=[0, 0, 0], X=[0.5, 0, 0]), (64, 1, 1), 32)
+    sol = LLGSolver(sysm, alpha=0.005, dt=2e-3, temperature=1.0, seed=1)
+    e = sysm.init_spins("reference")
+    for _ in range(2000):
+        e = sol.step(e)
+    E, Sp, _, _ = structure_factor(sysm, sol, e, q, 16384, 16, 2)
+    bands = lswt_bands(uc, q)[:, 0]
+    pos = E >= 0
+    peak = E[pos][np.argmax(Sp[:, pos], axis=1)]
+    dE = E[1] - E[0]
+    assert np.median(np.abs(peak - bands)) < 2 * dE
+
+
+def test_dmi_nonreciprocal_spin_waves():
+    from magex.spectra import analytic_film_dispersion, micromag_dispersion
+    mesh = Mesh((96, 1, 1), (2e-9, 2e-9, 1e-9), pbc=(True, False, False))
+    s = Micromagnet(mesh, demag=False)
+    s.add_region(np.ones(mesh.n, bool), Ms=8e5, A=1.3e-11, D=1.5e-3, alpha=0.002)
+    s.set_field([0, 0.2, 0])
+    m, _, _ = minimize(s, s.init("uniform", direction=(0, 1, 0)))
+    k, f, P, _ = micromag_dispersion(s, m, time_ns=0.2, fmax_GHz=300)
+    fa = analytic_film_dispersion(s, k)
+    df = f[1] - f[0]
+    for kk in (-0.3, 0.3):
+        i = np.argmin(abs(k - kk))
+        assert abs(f[np.argmax(P[i])] - fa[i]) < 2 * df

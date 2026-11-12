@@ -9,6 +9,9 @@
 - quantum thermostat for the atomistic LLG (Planck-spectrum coloured noise, `thermostat = "quantum"`)
 - RPA (Tyablikov) ordering temperature with sublattices and anisotropy gap, quantum (S+1)/S
   rescaling; `magex tc` and extra fields in the Monte Carlo `tc_estimate.json`
+- `magex sqw`: dynamical structure factor S(q,w) from atomistic LLG with LSWT overlay
+- micromagnetic stage `dispersion`: spin-wave dispersion (sinc source, 2D FFT) with analytic
+  thin-film overlay incl. interfacial-DMI non-reciprocity; local time-dependent fields (`B_local`)
 
 ## 0.2.0 (2026-11-12)
 

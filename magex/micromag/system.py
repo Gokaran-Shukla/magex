@@ -52,6 +52,7 @@ class Micromagnet:
         self.B_ext = np.zeros(3)
         self.B_ext_cell = None                  # optional (nx,ny,nz,3) static non-uniform field
         self.B_func = None                      # optional callable t -> (3,) added to B_ext
+        self.B_local = []                       # list of (mask (nx,ny,nz), callable t -> (3,)) local fields
         self.sot = None                         # dict(J, theta, sigma, fl_ratio, thickness)
         self.exchange_scale = {}                # {(r1, r2): factor} inter-region exchange scaling
         self.use_demag = bool(demag)
@@ -218,6 +219,8 @@ class Micromagnet:
         Bzee = np.broadcast_to(Bz, m.shape).copy()
         if self.B_ext_cell is not None:
             Bzee = Bzee + self.B_ext_cell
+        for mask, fn in self.B_local:
+            Bzee = Bzee + mask[..., None] * np.asarray(fn(self.t if t is None else t), float)
         F["zeeman"] = Bzee
         mag = self.magnetic[..., None]
         for k in F:

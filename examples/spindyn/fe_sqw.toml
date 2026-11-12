@@ -1,0 +1,18 @@
+# Magnons of bcc Fe at 300 K from atomistic LLG with the first-principles exchange (compare LSWT)
+#   magex sqw fe_sqw.toml
+[spinmodel]
+results = "../../validation_runs/bccFe_weighted/results.json.gz"
+rcut = 11.0
+supercell = [12, 12, 12]
+
+[sqw]
+temperature = 300.0
+alpha = 0.005
+dt = 5e-4
+therm_steps = 4000
+steps = 32768
+segments = 4
+path = "GHNGP"
+special_points = {G = [0, 0, 0], H = [-0.5, 0.5, 0.5], N = [0, 0, 0.5], P = [0.25, 0.25, 0.25]}
+emax = 600
+outdir = "fe_sqw"

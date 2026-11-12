@@ -1,0 +1,17 @@
+# Magnon spectrum of monolayer CrI3 from thermal LLG (Dirac magnons on the honeycomb lattice)
+#   magex sqw cri3_sqw.toml
+[spinmodel]
+results = "../../validation_runs/CrI3_atomic_soc/results.json.gz"
+supercell = [30, 30, 1]
+pbc = [true, true, false]
+
+[sqw]
+temperature = 2.0
+alpha = 0.005
+dt = 2e-3
+therm_steps = 5000
+steps = 65536
+segments = 2
+path = "GMKG"
+special_points = {G = [0, 0, 0], M = [0.5, 0, 0], K = [0.333333, 0.333333, 0]}
+outdir = "cri3_sqw"

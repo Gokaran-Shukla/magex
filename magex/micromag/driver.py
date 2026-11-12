@@ -144,6 +144,17 @@ def run_micromag_config(cfg, base=".", log=print):
             m, table = solver.run(m, st["time_ns"] * 1e-9, st.get("record_ps", 5.0) * 1e-12, log=log)
             write_table(os.path.join(outdir, f"table_{tag}.txt"), table, TABLE_HEADER)
             plot_table(table, os.path.join(outdir, f"table_{tag}.png"), title=f"stage {k}: T = {st['T_K']} K")
+        elif typ == "dispersion":
+            from ..spectra import analytic_film_dispersion, micromag_dispersion, plot_dispersion
+            axis = {"x": 0, "y": 1}[st.get("axis", "x")]
+            k, f, P, comp = micromag_dispersion(sysm, m, st.get("time_ns", 1.0), st.get("fmax_GHz", 100.0),
+                                                st.get("B_amp_T", 1e-3), axis, st.get("source_nm"),
+                                                st.get("width_cells", 1), st.get("dt_fs"), st.get("layer", 0),
+                                                st.get("line"), log)
+            np.savez_compressed(os.path.join(outdir, f"dispersion_{tag}.npz"), k_rad_nm=k, f_GHz=f, power=P)
+            an = analytic_film_dispersion(sysm, k, axis) if st.get("analytic", True) else None
+            plot_dispersion(k, f, P, os.path.join(outdir, f"dispersion_{tag}.png"), an,
+                            st.get("title", "spin-wave dispersion"), st.get("kmax"), st.get("fmax_GHz"))
         elif typ == "hysteresis":
             snaps = []
             every = max(1, st.get("npts", 41) // 4)

@@ -1,0 +1,36 @@
+# Non-reciprocal spin waves from interfacial DMI: in-plane magnetised Pt/CoFeB-like film, k _|_ m
+#   magex micromag dmi_spinwaves.toml       (f(+k) != f(-k): frequency shift 2 gamma D k / (2 pi Ms))
+[mesh]
+n = [256, 1, 1]
+cell_nm = [2.0, 2.0, 1.0]
+pbc = [true, true, false]          # infinite film (1 cell along y, periodic)
+pbc_images = 40
+
+[[region]]
+Ms = 8.0e5
+A = 1.3e-11
+D = 1.5e-3
+dmi = "interfacial"
+alpha = 0.002
+
+[field]
+B = [0, 0.2, 0]
+
+[init]
+type = "uniform"
+direction = [0, 1, 0]
+
+[[stage]]
+type = "minimize"
+
+[[stage]]
+type = "dispersion"
+axis = "x"
+time_ns = 0.5
+fmax_GHz = 250
+B_amp_T = 0.001
+kmax = 0.6
+title = "interfacial DMI: non-reciprocal spin waves"
+
+[output]
+dir = "dmi_sw_out"
