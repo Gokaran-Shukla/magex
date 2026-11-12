@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "magex"
-version = "0.1.0"
-description = "Green's-function magnetic exchange tensors, anisotropy, renormalised/downfolded J and LSWT magnons from Wannier90 Hamiltonians (MPI parallel)"
+version = "0.2.0"
+description = "From Wannier90 Hamiltonians to devices: Green's-function exchange tensors, DMI and anisotropy, LSWT magnons, atomistic LLG spin dynamics, Monte Carlo T_C/T_N and finite-difference micromagnetics"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Gokaran Shukla"}]
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.22", "scipy", "tomli; python_version < '3.11'"]
-keywords = ["magnetic exchange", "DMI", "magnetic anisotropy", "Green's function", "Wannier90", "magnons"]
+dependencies = ["numpy>=1.22", "scipy", "matplotlib>=3.5", "pillow", "tomli; python_version < '3.11'"]
+keywords = ["magnetic exchange", "DMI", "magnetic anisotropy", "Green's function", "Wannier90", "magnons", "spin dynamics", "LLG", "Monte Carlo", "Curie temperature", "micromagnetics", "skyrmions", "spin-orbit torque"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -34,4 +34,4 @@ Issues = "https://github.com/Gokaran-Shukla/magex/issues"
 magex = "magex.cli:main"
 
 [tool.setuptools]
-packages = ["magex"]
+packages = ["magex", "magex.micromag"]

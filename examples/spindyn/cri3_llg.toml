@@ -1,0 +1,18 @@
+# CrI3 monolayer: thermal LLG at 15 K with field off / on (first-principles anisotropic exchange)
+#   magex llg cri3_llg.toml
+[spinmodel]
+results = "../../validation_runs/CrI3_atomic_soc/results.json.gz"
+supercell = [30, 30, 1]
+pbc = [true, true, false]
+
+[llg]
+alpha = 0.2
+dt = 2e-3
+steps = 10000
+temperature = 15.0
+field = [0, 0, 1.0]
+compare_field = true
+init = "ferro"
+init_axis = [0, 0, 1]
+output_every = 100
+outdir = "cri3_llg"

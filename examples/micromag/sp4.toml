@@ -1,0 +1,29 @@
+# muMAG standard problem 4: 500 x 125 x 3 nm^3 permalloy, s-state reversal in field 1
+#   magex micromag sp4.toml      reference: <mx> first crosses zero at t ~ 0.137 ns
+[mesh]
+n = [128, 32, 1]
+cell_nm = [3.90625, 3.90625, 3.0]
+
+[[region]]
+material = "Py"
+alpha = 0.02
+
+[init]
+type = "uniform"
+direction = [1, 0.1, 0.01]
+
+[[stage]]
+type = "relax"
+title = "SP4 s-state"
+
+[[stage]]
+type = "run"
+title = "SP4 field 1: B = (-24.6, 4.3, 0) mT"
+B = [-0.0246, 0.0043, 0.0]
+time_ns = 1.0
+record_ps = 5
+tol = 1e-6
+movie = true
+
+[output]
+dir = "sp4_out"

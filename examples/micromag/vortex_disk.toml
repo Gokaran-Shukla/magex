@@ -1,0 +1,26 @@
+# Magnetic vortex in a 200 nm permalloy disk, then core displacement by an in-plane field
+#   magex micromag vortex_disk.toml
+[mesh]
+n = [64, 64, 1]
+cell_nm = [3.125, 3.125, 20.0]
+
+[[region]]
+material = "Py"
+shape = "disk"
+diameter_nm = 200
+
+[init]
+type = "vortex"
+core_nm = 10
+
+[[stage]]
+type = "relax"
+title = "vortex ground state"
+
+[[stage]]
+type = "relax"
+B = [0.02, 0, 0]
+title = "B_x = 20 mT: core shifts perpendicular to the field"
+
+[output]
+dir = "vortex_out"

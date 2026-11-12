@@ -15,3 +15,8 @@ magex_results/
 .DS_Store
 !validation_runs/**/exchange.out
 _mpi_*.npy
+# simulation outputs of the examples (regenerate with magex llg/mc/micromag)
+examples/micromag/*_out/
+examples/micromag/*.log
+examples/spindyn/*/
+examples/spindyn/*.log

@@ -1,0 +1,15 @@
+# Curie temperature of monolayer CrI3 (anisotropic exchange + single-ion anisotropy from SOC)
+#   magex mc cri3_mc.toml
+[spinmodel]
+results = "../../validation_runs/CrI3_atomic_soc/results.json.gz"
+anisotropic = true     # full 3x3 J tensors (Kitaev/symmetric anisotropy + DMI)
+sia = true             # single-ion anisotropy
+supercell = [16, 16, 1]
+pbc = [true, true, false]
+
+[mc]
+sizes = [[12, 12, 1], [18, 18, 1]]
+temperatures = {start = 10, stop = 40, n = 13}
+therm_sweeps = 2000
+meas_sweeps = 4000
+outdir = "cri3_mc"

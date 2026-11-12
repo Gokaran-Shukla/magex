@@ -1,4 +1,13 @@
-"""Command line:  magex run input.toml   |   magex magnon input.toml"""
+"""magex command line
+
+  magex run       input.toml   Green's-function exchange from Wannier90 (MPI: mpirun -n N magex run ...)
+  magex magnon    input.toml   LSWT magnon bands from results.json
+  magex llg       input.toml   atomistic stochastic LLG spin dynamics + real-space textures (B on/off)
+  magex mc        input.toml   Metropolis Monte Carlo: M(T), chi, C, Binder -> Curie / Neel temperature
+  magex micromag  input.toml   finite-difference micromagnetics (thin films, nanostructures, SOT, loops)
+  magex params    results.json atomistic -> micromagnetic parameters (Ms, A, D, K)
+  magex model     out.json     write a model spin Hamiltonian (lattice, J, D, K) in results.json format
+"""
 from __future__ import annotations
 
 import argparse
@@ -90,21 +99,60 @@ def magnon_from_results(cfg):
     return W
 
 
+def _raw_cfg(path):
+    with open(path, "rb") as f:
+        return tomllib.load(f), os.path.dirname(os.path.abspath(path))
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="magex", description=__doc__)
-    ap.add_argument("task", choices=["run", "magnon"])
-    ap.add_argument("config")
+    ap = argparse.ArgumentParser(prog="magex", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("task", choices=["run", "magnon", "llg", "mc", "micromag", "params", "model"])
+    ap.add_argument("config", help="input TOML (results.json for 'params', output path for 'model')")
+    ap.add_argument("--field", type=float, nargs=3, default=None, help="llg: override B (T)")
+    ap.add_argument("--J", default="mft", help="params: mft | bruno | downfold")
+    ap.add_argument("--rcut", type=float, default=None, help="params: coupling cutoff (A)")
+    ap.add_argument("--thickness", type=float, default=None, help="params: film thickness (A)")
+    ap.add_argument("--lattice", default="sc")
+    ap.add_argument("--a", type=float, default=3.0)
+    ap.add_argument("--Jnn", type=float, nargs="+", default=[1.0], help="model: J per shell (meV, per ordered pair)")
+    ap.add_argument("--D", type=float, default=0.0)
+    ap.add_argument("--dmi", default="interfacial")
+    ap.add_argument("--K", type=float, default=0.0)
+    ap.add_argument("--moment", type=float, default=2.0)
+    ap.add_argument("--order", default="ferro")
     a = ap.parse_args(argv)
-    cfg = load_cfg(a.config)
-    if a.task == "run":
-        from .driver import run
-        run(cfg)
-        if "magnon" in cfg:
-            from . import parallel as par
-            if par.is_root():
-                magnon_from_results(cfg)
-    else:
-        magnon_from_results(cfg)
+    if a.task in ("run", "magnon"):
+        cfg = load_cfg(a.config)
+        if a.task == "run":
+            from .driver import run
+            run(cfg)
+            if "magnon" in cfg:
+                from . import parallel as par
+                if par.is_root():
+                    magnon_from_results(cfg)
+        else:
+            magnon_from_results(cfg)
+    elif a.task == "llg":
+        from .llg import run_llg_config
+        cfg, base = _raw_cfg(a.config)
+        run_llg_config(cfg, base, field_override=a.field)
+    elif a.task == "mc":
+        from .montecarlo import run_mc_config
+        cfg, base = _raw_cfg(a.config)
+        run_mc_config(cfg, base)
+    elif a.task == "micromag":
+        from .micromag.driver import run_micromag_config
+        cfg, base = _raw_cfg(a.config)
+        run_micromag_config(cfg, base)
+    elif a.task == "params":
+        from .micromag.bridge import micromagnetic_parameters
+        out = micromagnetic_parameters(a.config, J=a.J, rcut=a.rcut, thickness_A=a.thickness, log=print)
+        print(json.dumps(out, indent=1))
+    elif a.task == "model":
+        from .models import write_model
+        write_model(a.config, lattice=a.lattice, a=a.a, J=a.Jnn, D=a.D, dmi=a.dmi, K=a.K, moment=a.moment,
+                    order=a.order)
+        print(f"model written to {a.config}")
 
 
 if __name__ == "__main__":

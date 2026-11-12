@@ -1,0 +1,40 @@
+# Spin-orbit-torque switching of a perpendicular Pt/Co/AlOx dot (damping-like SOT + in-plane bias)
+#   magex micromag sot_switching.toml
+[mesh]
+n = [40, 40, 1]
+cell_nm = [2.0, 2.0, 0.8]
+
+[[region]]
+material = "Pt/Co/AlOx"
+D = 0.0
+shape = "disk"
+diameter_nm = 80
+
+[field]
+B = [-0.05, 0, 0]             # in-plane bias field: its sign selects the final state (up -> down here)
+
+[sot]
+J = 1.0e13                    # A/m^2 in the heavy metal
+theta = 0.3                   # effective spin Hall angle (beta-W / Pt-alloy range)
+sigma = [0, 1, 0]             # spin polarisation (current along x, normal z)
+fl_ratio = 0.0
+thickness_nm = 0.8
+pulse_ns = [0.1, 0.3]         # current on from 0.1 to 0.4 ns
+
+[init]
+type = "uniform"
+direction = [0, 0, 1]
+
+[[stage]]
+type = "relax"
+title = "initial state: m up"
+
+[[stage]]
+type = "run"
+time_ns = 1.0
+record_ps = 2
+movie = true
+title = "SOT pulse 0.1-0.4 ns: up -> down"
+
+[output]
+dir = "sot_out"

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0 (unreleased, branch `spin-dynamics`)
+
+Simulation engines on top of the exchange calculation.
+
+- `magex llg`: atomistic stochastic LLG (Heun) with full 3x3 exchange tensors, DMI, single-ion anisotropy
+  and Zeeman; field off/on comparison, annealing, real-space textures, topological charge on any lattice, GIFs
+- `magex mc`: Metropolis Monte Carlo with adaptive moves, over-relaxation and graph-coloured vectorised
+  sweeps; automatic FM/AFM/ferrimagnetic order parameter; Binder-cumulant T_C / T_N; parallel temperatures
+- J(q) stability check (warns when a coupling cut-off makes a spiral the ground state); mean-field T_C
+- `magex micromag`: finite-difference micromagnetics — Newell demag with FFT (open/periodic), exchange,
+  interfacial/bulk DMI with chiral boundary conditions, Ku1/Ku2/cubic anisotropy, Zeeman (static, pulse,
+  ac, sinc, non-uniform), spin-orbit torques, RK45 / stochastic Heun / Barzilai-Borwein / relax /
+  hysteresis, regions and multilayers with inter-region exchange scaling, geometries incl. PNG masks,
+  OVF 2.0 I/O, material library
+- `magex params`: atomistic -> micromagnetic parameters (A, D_int, D_bulk, K_u, Ms)
+- `magex model`: model Hamiltonians on standard lattices in results.json format
+- publication figure style (vector PDF + 300 dpi PNG, Okabe-Ito palette, HSL texture colouring)
+- results.json.gz support; bundled results for bcc Fe, SrMnO3 and CrI3
+- tutorials (docs/tutorials) and example inputs (examples/spindyn, examples/micromag)
+- tests: Larmor, energy conservation, Langevin, MC limits, topological charge, demag sum rules,
+  Bloch and DMI wall energies, OVF round trip, SOT torque sign, atomistic-continuum spiral energies
+
 ## 0.1.0 (2026-11-11)
 
 First public release.

@@ -1,0 +1,26 @@
+# Isolated Neel skyrmion in a 100 nm Co/Pt disk (Sampaio et al., Nat. Nanotechnol. 8, 839 (2013))
+#   magex micromag skyrmion_disk.toml
+[mesh]
+n = [100, 100, 1]
+cell_nm = [1.0, 1.0, 0.6]
+
+[[region]]
+material = "Co/Pt"       # Ms 580 kA/m, A 15 pJ/m, Ku 0.8 MJ/m^3, D_int 3 mJ/m^2
+shape = "disk"
+diameter_nm = 100
+
+[init]
+type = "skyrmion"
+radius_nm = 10
+
+[[stage]]
+type = "relax"
+title = "relaxed skyrmion, B = 0"
+
+[[stage]]
+type = "relax"
+B = [0, 0, 0.2]
+title = "B = +200 mT (along the background): skyrmion shrinks"
+
+[output]
+dir = "skyrmion_disk_out"

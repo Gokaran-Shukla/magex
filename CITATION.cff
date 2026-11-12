@@ -1,11 +1,11 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "magex: magnetic exchange tensors, anisotropy and magnons from Wannier Hamiltonians"
+title: "magex: from Wannier Hamiltonians to magnetic textures, ordering temperatures and micromagnetics"
 authors:
   - family-names: Shukla
     given-names: Gokaran
     affiliation: "King Abdullah University of Science and Technology (KAUST)"
-version: 0.1.0
+version: 0.2.0
 date-released: 2026-11-11
 license: MIT
 repository-code: "https://github.com/Gokaran-Shukla/magex"
@@ -16,3 +16,7 @@ keywords:
   - Green's functions
   - Wannier90
   - spin waves
+  - atomistic spin dynamics
+  - Monte Carlo
+  - micromagnetics
+  - skyrmions

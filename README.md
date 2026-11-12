@@ -1,11 +1,48 @@
 # magex
 
-**Magnetic exchange tensors, magnetic anisotropy, renormalised and downfolded couplings, and spin waves
-from Wannier90 Hamiltonians. Green's-function method, MPI-parallel on CPUs.**
+**From first principles to devices: magnetic exchange tensors from Wannier90 Hamiltonians, atomistic
+spin dynamics (LLG), Monte Carlo ordering temperatures and finite-difference micromagnetics, in one
+Python package. MPI/multithreaded on CPUs.**
 
 [![tests](https://github.com/Gokaran-Shukla/magex/actions/workflows/tests.yml/badge.svg)](https://github.com/Gokaran-Shukla/magex/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
+
+```
+ Wannier90 H(k) ─ magex run ─▶ results.json ─ magex llg ──▶ atomistic LLG, textures, topological charge
+ (VASP / QE)                  J_ij tensors,  ─ magex mc ───▶ M(T), χ, C, Binder → T_C / T_N
+                              DMI, SIA, μ    ─ magex params ▶ Ms, A, D, K ─ magex micromag ─▶ thin films,
+                                                                     nanostructures, hysteresis, SOT
+```
+
+| engine | command | highlights |
+|--------|---------|-----------|
+| **Exchange from DFT** | `magex run` | rotationally invariant LKAG (sum rule to 1e-15), full 3×3 J + DMI + SIA from one run, Bruno renormalisation, ligand downfolding, Lloyd finite-angle energies, LSWT magnons |
+| **Atomistic spin dynamics** | `magex llg` | stochastic LLG (Heun), any lattice, full tensors, field off/on comparison, textures + topological charge, GIFs |
+| **Monte Carlo** | `magex mc` | vectorised Metropolis + over-relaxation (graph colouring), automatic FM/AFM/ferri order parameter, Binder crossing → T_C / T_N |
+| **Micromagnetics** | `magex micromag` | OOMMF/mumax-style FD solver: Newell demag (FFT, PBC), exchange, interfacial/bulk DMI with chiral BCs, uniaxial/cubic anisotropy, SOT, RK45/Heun/BB, hysteresis, multilayers, OVF 2.0 |
+| **Multiscale bridge** | `magex params` | A, D, K, Ms from the atomistic tensors (validated to 0.05 %) |
+| **Model Hamiltonians** | `magex model` | chain, square, triangular, honeycomb, kagome, sc, bcc, fcc with J shells, DMI, K |
+
+<p align="center">
+  <img src="docs/img/tut_skyrmion_llg.png" width="70%"><br>
+  <em>Atomistic LLG on a triangular lattice with interfacial DMI: spin spirals with the field off, a Néel
+  skyrmion lattice (Q = −11) at 2 T.</em>
+</p>
+<p align="center">
+  <img src="docs/img/tut_skyrmion_disk.png" width="56%">
+  <img src="docs/img/tut_fe_mc.png" width="40%"><br>
+  <em>Left: micromagnetic Néel skyrmion in a 100 nm Co/Pt disk. Right: Monte Carlo T_C of bcc Fe from
+  the magex exchange (Binder crossing of two sizes).</em>
+</p>
+
+**Tutorials:** [`docs/tutorials`](docs/tutorials/README.md) — spin model, LLG and textures, Monte Carlo
+T_C/T_N, micromagnetics (μMAG SP4), thin-film recipes (skyrmions, hysteresis, vortex, SOT, B20 helix,
+multilayers), DFT → micromagnetics, Python API.
+
+---
+
+## Part I — exchange parameters from Wannier Hamiltonians
 
 `magex` computes the parameters of the extended Heisenberg model
 
@@ -45,6 +82,7 @@ Right: the Goldstone sum rule, broken by 200 meV with on-site rotation, holds to
 - [Theory in brief](#theory-in-brief)
 - [Validation](#validation)
 - [Limitations](#limitations)
+- [Part II — spin dynamics, Monte Carlo and micromagnetics](#part-ii--spin-dynamics-monte-carlo-and-micromagnetics)
 - [Repository layout](#repository-layout)
 - [Citing](#citing)
 - [Licence](#licence)
@@ -289,6 +327,74 @@ Run `python -m pytest tests`. Every formula is checked against brute force:
 - Orbital-resolved $J$ is available with `partition = "onsite"` only.
 - CPU only. Memory of the weighted engine grows with $N_k\times N_{\rm wann}$.
 
+## Part II — spin dynamics, Monte Carlo and micromagnetics
+
+Full documentation: [`docs/tutorials`](docs/tutorials/README.md); inputs: [`examples/spindyn`](examples/spindyn),
+[`examples/micromag`](examples/micromag).
+
+```bash
+magex llg  examples/spindyn/skyrmion_llg.toml     # atomistic skyrmions, field off vs on
+magex mc   examples/spindyn/fe_mc.toml            # Curie temperature of bcc Fe
+magex mc   examples/spindyn/srmno3_mc.toml        # Neel temperature of SrMnO3
+magex micromag examples/micromag/sp4.toml         # muMAG standard problem 4
+magex micromag examples/micromag/skyrmion_disk.toml
+magex params validation_runs/CrI3_atomic_soc/results.json.gz
+```
+
+### Atomistic LLG (`[llg]`)
+
+`de/dt = −γ/(1+α²)[e × B + α e × (e × B)]` with the Brown thermal field; B from the full magex
+Hamiltonian (3×3 J tensors, DMI, single-ion anisotropy, Zeeman).  `compare_field = true` runs the same
+initial state with the field off and on and plots both textures side by side; the topological charge is
+computed on any lattice from a periodic Delaunay triangulation.  Outputs: textures (PDF + PNG), time
+series, spins (npz/csv), GIF.
+
+### Monte Carlo (`[mc]`)
+
+Metropolis with adaptive moves and over-relaxation, simultaneous updates of non-interacting sites,
+temperatures in parallel processes.  The order parameter (magnetisation or Néel vector) is set from
+the magex reference; T_C / T_N from the Binder-cumulant crossing of two sizes, with χ and C peaks as
+cross-checks.  The J(q) stability check warns when the coupling cut-off makes a spiral the ground state.
+
+### Micromagnetics (`magex micromag`)
+
+| feature | details |
+|---------|---------|
+| mesh | rectangular FD mesh, open or periodic axes, regions with their own material, multilayers |
+| geometry | rectangle, disk, ellipse, ring, triangle, polygon, PNG mask, holes, rotation, z-ranges |
+| energy terms | exchange (harmonic mean at interfaces, inter-region scaling), demag (Newell tensor, FFT, PBC images), Ku1/Ku2, cubic Kc1, interfacial and bulk DMI with chiral boundary conditions, Zeeman (static, pulse, ac, sinc, non-uniform) |
+| torques | spin-orbit torque (damping-like + field-like, pulsed or arbitrary waveform) |
+| solvers | adaptive Dormand–Prince RK45, stochastic Heun at T > 0, Barzilai–Borwein minimiser, relax, hysteresis |
+| output | OVF 2.0 (binary/text, OOMMF/mumax compatible), tables, HSL + m_z figures, movies, spectra, loops |
+| materials | Py, Co/Pt, Pt/Co/AlOx, CoFeB, Ta/CoFeB/MgO, Fe, Ni, hcp Co, YIG, FeGe, MnSi, Fe3GeTe2, CrI3 |
+
+### Validation of the dynamics engines
+
+| check | result |
+|-------|--------|
+| Larmor frequency γB | exact (10⁻⁶) |
+| thermal LLG / MC vs Langevin function | within statistics |
+| SC Heisenberg FM T_C (exact 33.49 K) | 33.29 K |
+| SC Heisenberg AFM T_N | 32.6 K |
+| demag tensor sum rules | 10⁻¹² |
+| Bloch wall energy 4√(AK) | 0.06 % |
+| DMI wall energy 4√(AK) − π\|D\| | 0.03 % |
+| μMAG SP4: s-state ⟨m⟩, first ⟨m_x⟩ = 0 | (0.9670, 0.1253, 0), 0.136 ns (ref. ≈ 0.137 ns) |
+| atomistic → continuum A, D | 0.05 % |
+
+Real materials, from the exchange bundled in `validation_runs/` (`examples/spindyn/*_mc.toml`):
+
+| material | quantity | magex (classical MC) | experiment |
+|----------|----------|----------------------|------------|
+| bcc Fe (MFT exchange, rcut 11 Å) | T_C | 1060 K (Binder 8³/10³; χ peak 1031 K) | 1043 K |
+| SrMnO3 (G-type AFM) | T_N | 192 K (Binder 6³/8³; χ peak 207 K) | 233–260 K |
+| CrI3 monolayer (anisotropic J + SIA) | T_C | 20 K (classical spins) | 45 K |
+
+Classical spins underestimate T_C for small S; the RPA/quantum rescaling (S+1)/S brings CrI3 (S = 3/2)
+to ≈ 34 K.  For bcc Fe the full-range couplings are essential: truncation at 5–6 Å gives a spiral
+ground state (flagged by the J(q) check) and 8 Å gives T_C ≈ 650 K.
+
+
 ## Repository layout
 
 ```
@@ -307,10 +413,17 @@ magex/
   parallel.py         MPI helpers (serial fallback)
   driver.py           workflow
   output.py, cli.py   exchange.out / json / csv writers, command line
-tests/                exactness tests against brute force
-examples/             input templates and a SLURM script
-validation_runs/      outputs for SrMnO3, bcc Fe, CrI3
-docs/                 theory slides (PDF + LaTeX source + figure script)
+  spinmodel.py        results.json -> supercell spin Hamiltonian (sparse), J(q) check, mean-field T_C
+  llg.py, texture.py  stochastic LLG (Heun), texture plots, topological charge, GIFs
+  montecarlo.py       Metropolis + over-relaxation, graph colouring, Binder analysis
+  models.py           model lattices (chain ... fcc) with J shells, DMI, anisotropy
+  plotstyle.py        publication figure style (PDF + 300 dpi PNG, colour-blind safe)
+  micromag/           finite-difference micromagnetics: mesh, demag, system, solver, io (OVF), plot,
+                      materials, bridge (atomistic -> continuum), driver
+tests/                exactness tests (exchange engines, LLG, MC, micromagnetics)
+examples/             exchange inputs, spindyn/ (LLG, MC), micromag/ (thin films, devices)
+validation_runs/      outputs for SrMnO3, bcc Fe, CrI3 (results.json.gz used by the examples)
+docs/                 theory slides, tutorials/
 ```
 
 ## Citing
@@ -322,6 +435,13 @@ If you use magex, please cite this repository (see [`CITATION.cff`](CITATION.cff
 - P. Bruno, Phys. Rev. Lett. **90**, 087205 (2003)
 - T. Ozaki, Phys. Rev. B **75**, 035123 (2007)
 - X. He, N. Helbig, M. J. Verstraete, E. Bousquet, Comput. Phys. Commun. **264**, 107938 (2021) (TB2J)
+
+and, for the dynamics engines,
+
+- A. J. Newell, W. Williams, D. J. Dunlop, J. Geophys. Res. **98**, 9551 (1993) (demag tensor)
+- A. Vansteenkiste *et al.*, AIP Advances **4**, 107133 (2014) (mumax³ conventions)
+- R. F. L. Evans *et al.*, J. Phys.: Condens. Matter **26**, 103202 (2014) (atomistic spin dynamics)
+- K. Binder, Z. Phys. B **43**, 119 (1981) (cumulant method)
 
 ## Licence
 

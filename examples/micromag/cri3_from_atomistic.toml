@@ -1,0 +1,37 @@
+# Multiscale: micromagnetic CrI3 flake with Ms, A, K taken from the magex atomistic exchange
+#   magex params ../../validation_runs/CrI3_atomic_soc/results.json.gz    (prints the parameters)
+#   magex micromag cri3_from_atomistic.toml
+[mesh]
+n = [80, 80, 1]
+cell_nm = [1.0, 1.0, 0.7]
+
+[[region]]
+from_atomistic = "../../validation_runs/CrI3_atomic_soc/results.json.gz"
+thickness_A = 7.0
+shape = "disk"
+diameter_nm = 80
+alpha = 0.1
+
+[init]
+type = "random"
+seed = 2
+
+[[stage]]
+type = "relax"
+title = "CrI3 flake from first-principles parameters"
+
+[[stage]]
+type = "relax"
+B = [0, 0, 1.0]
+title = "B = 1 T: the field-favoured domain grows (walls move, no saturation yet)"
+
+[[stage]]
+type = "hysteresis"
+B = [0, 0, 0]
+Bmax_T = 6.0
+npts = 31
+direction = [0.035, 0, 1]
+title = "CrI3 flake (T = 0, defect-free: upper bound of the coercivity)"
+
+[output]
+dir = "cri3_mm_out"

@@ -1,0 +1,27 @@
+# Labyrinth domains (field off) -> skyrmions (field on) in an extended PMA film with D > D_c
+#   magex micromag skyrmion_film_field.toml
+[mesh]
+n = [128, 128, 1]
+cell_nm = [1.0, 1.0, 0.6]
+pbc = [true, true, false]
+
+[[region]]
+material = "Co/Pt"
+D = 3.6e-3               # > D_c = 4 sqrt(A K_eff)/pi = 3.78 mJ/m^2 when demag is reduced -> spirals
+Ku1 = 6.5e5
+
+[init]
+type = "random"
+seed = 4
+
+[[stage]]
+type = "relax"
+title = "field off: labyrinth / spiral domains"
+
+[[stage]]
+type = "relax"
+B = [0, 0, -0.25]
+title = "B = -250 mT (along the majority domains): isolated skyrmions"
+
+[output]
+dir = "skyrmion_film_out"

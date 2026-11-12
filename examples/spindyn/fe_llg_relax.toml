@@ -1,0 +1,17 @@
+# bcc Fe: damped LLG relaxation from a random state at T = 0 and magnetisation dynamics in 10 T
+#   magex llg fe_llg_relax.toml
+[spinmodel]
+results = "../../validation_runs/bccFe_weighted/results.json.gz"
+rcut = 11.0
+supercell = [10, 10, 10]
+
+[llg]
+alpha = 0.1
+dt = 5e-4
+steps = 24000
+temperature = 300.0
+field = [0, 0, 10.0]
+init = "ferro"
+init_axis = [1, 0, 0]       # start perpendicular to the field: damped precession towards +z
+plane = "xy"
+outdir = "fe_llg"

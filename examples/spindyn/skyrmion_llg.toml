@@ -1,0 +1,19 @@
+# Atomistic Neel skyrmions on a triangular lattice with interfacial DMI: field off vs field on
+#   magex llg skyrmion_llg.toml
+[spinmodel]
+model = {lattice = "triangular", a = 3.0, J = [2.0], D = 1.0, dmi = "interfacial", moment = 3.0}
+supercell = [48, 48, 1]
+pbc = [true, true, false]
+
+[llg]
+alpha = 0.5
+dt = 2e-3                 # ps
+steps = 15000
+field = [0, 0, 2.0]       # T; with compare_field = true a B = 0 run is done first
+compare_field = true
+init = "random"
+anneal = {T_start = 30.0, steps = 5000}    # field-cooling from 30 K helps reach the textured state
+torque_tol = 1e-3
+output_every = 200
+gif = true
+outdir = "skyrmion_llg"

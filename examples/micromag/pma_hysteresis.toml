@@ -1,0 +1,22 @@
+# Out-of-plane hysteresis loop of a 64 nm CoFeB/MgO square nanomagnet
+#   magex micromag pma_hysteresis.toml
+[mesh]
+n = [32, 32, 1]
+cell_nm = [2.0, 2.0, 1.0]
+
+[[region]]
+material = "CoFeB"
+
+[init]
+type = "uniform"
+direction = [0, 0, 1]
+
+[[stage]]
+type = "hysteresis"
+Bmax_T = 1.2
+npts = 49
+direction = [0.035, 0, 1]     # 2 degree tilt breaks the symmetry, as in experiment
+title = "CoFeB nanomagnet, field ~ z"
+
+[output]
+dir = "pma_loop_out"

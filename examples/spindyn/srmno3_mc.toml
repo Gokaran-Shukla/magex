@@ -1,0 +1,12 @@
+# Neel temperature of G-type antiferromagnetic cubic SrMnO3
+#   magex mc srmno3_mc.toml
+[spinmodel]
+results = "../../validation_runs/SrMnO3_weighted/results.json.gz"
+supercell = [6, 6, 6]      # magnetic cells (2 Mn each)
+
+[mc]
+sizes = [[6, 6, 6], [8, 8, 8]]
+temperatures = {start = 140, stop = 300, n = 11}
+therm_sweeps = 1000
+meas_sweeps = 2000
+outdir = "srmno3_mc"

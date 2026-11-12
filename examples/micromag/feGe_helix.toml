@@ -1,0 +1,24 @@
+# Bulk-DMI helimagnet FeGe: helical ground state in a periodic slab (period 4 pi A / D ~ 70 nm)
+#   magex micromag feGe_helix.toml
+[mesh]
+n = [140, 4, 1]
+cell_nm = [1.0, 1.0, 1.0]
+pbc = [true, true, false]
+
+[demag]
+enabled = false
+
+[[region]]
+material = "FeGe"
+
+[init]
+type = "helix"
+period_nm = 70
+q_dir = [1, 0, 0]
+
+[[stage]]
+type = "minimize"
+title = "FeGe helix (bulk DMI)"
+
+[output]
+dir = "fege_out"

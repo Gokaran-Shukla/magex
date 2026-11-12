@@ -1,0 +1,15 @@
+# Curie temperature of bcc Fe from the magex exchange (classical Metropolis Monte Carlo)
+#   magex mc fe_mc.toml
+[spinmodel]
+results = "../../validation_runs/bccFe_weighted/results.json.gz"
+J = "mft"            # mft | bruno | downfold
+rcut = 11.0          # A: (nearly) all computed couplings. Truncating at 5-6 A makes a spiral
+                     # the ground state, and 8 A cuts inside a negative RKKY oscillation (T_C too low)
+supercell = [10, 10, 10]
+
+[mc]
+sizes = [[8, 8, 8], [10, 10, 10]]   # two sizes -> Binder crossing; supercell widths must exceed 2 rcut
+temperatures = {start = 850, stop = 1350, n = 11}
+therm_sweeps = 800
+meas_sweeps = 1600
+outdir = "fe_mc"
