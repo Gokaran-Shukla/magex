@@ -51,10 +51,10 @@ The skyrmion helicity is chosen automatically from the DMI.
 ![MRAM path](../img/tut_mram_path.png)
 
 48 nm CoFeB/MgO disk, 1.2 nm: reversal proceeds by a domain wall sweeping across the disk, not by
-coherent rotation, and ΔE = 66 k_BT at 300 K.  This agrees with the wall-energy estimate
-σ_w d t = 4√(A K_eff) · 48 nm · 1.2 nm ≈ 72 k_BT and is far below the coherent (Stoner–Wohlfarth)
-value K_eff V ≈ 360 k_BT — the reason MRAM free layers larger than ~30 nm lose stability
-relative to the macrospin estimate.  The macrospin limit itself is a unit test
+coherent rotation, and ΔE = 66 k_BT at 300 K.  This is close to the wall-energy estimate
+σ_w d t = 4√(A K_eff) · 48 nm · 1.2 nm ≈ 57 k_BT (thin-film K_eff) and below the coherent-rotation
+barrier of the same disk, 81 k_BT (energy of the uniform in-plane state) — the reason the stability
+of MRAM free layers larger than ~30 nm falls below the macrospin estimate.  The macrospin limit itself is a unit test
 (ΔE = KV(1 − h)² to 10⁻³).
 
 Lifetimes use a user-given attempt time τ₀ (typically 10⁻¹²–10⁻⁹ s); harmonic transition-state
