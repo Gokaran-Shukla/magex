@@ -199,3 +199,26 @@ def test_wang_landau_and_parallel_tempering_agree(tmp):
     rows, _ = parallel_tempering(s, [20.0, 45.0], therm_sweeps=500, meas_sweeps=3000)
     for a, r in zip(th, rows):
         assert abs(a["E"] - r["E"]) < 0.1 * abs(r["E"]) + 5 * r["dE"]
+
+
+def test_tb2j_import_and_exports(tmp):
+    import json
+    import os
+    from magex import interop
+    src = os.path.join(os.path.dirname(__file__), "data", "tb2j_fe_exchange.out.gz")
+    d = interop.read_tb2j(src)
+    assert len(d["pairs"]) == 64 and d["symbols"] == ["Fe"]
+    p = str(tmp / "fe.json")
+    json.dump(d, open(p, "w"))
+    uc = load_results(p, rcut=2.6)
+    assert abs(np.trace(uc.couplings[0][3]) / 3 - 8.837) < 1e-3       # TB2J NN J_iso (meV)
+    out = interop.export_vampire(p, str(tmp / "vamp"), rcut=2.6)
+    txt = open(os.path.join(out, "vampire.UCF")).read().split("tensorial\n")[1].split()
+    assert abs(float(txt[6]) / (2 * 8.8368e-3 * 1.602176634e-19) - 1) < 1e-3
+    interop.export_uppasd(p, str(tmp / "asd"), rcut=2.6)
+    interop.export_spirit(p, str(tmp / "spirit"), rcut=2.6)
+    assert len(open(tmp / "spirit" / "couplings.txt").read().splitlines()) == 1 + 4   # unique NN pairs
+    cfg = dict(mesh=dict(n=[32, 32, 1], cell_nm=[2, 2, 1]), region=[dict(material="Co/Pt", shape="disk", diameter_nm=60)],
+               init=dict(type="skyrmion"), stage=[dict(type="relax"), dict(type="run", time_ns=0.1)])
+    mx3 = open(interop.export_mumax3(cfg, str(tmp / "a.mx3"))).read()
+    assert "Dind" in mx3 and "Run(0.1e-9)" in mx3 and "Circle(60e-9)" in mx3

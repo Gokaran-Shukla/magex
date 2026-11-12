@@ -35,6 +35,7 @@
   with density of states, entropy and free energy; `method = ...` in [mc]
 - micromagnetic checkpoint/restart (`checkpoint_ps`, `[output] restart = true`); experimental CuPy GPU
   backend (`Micromagnet.to_gpu()`, self-check `python -m magex.micromag.gpu`)
+- interoperability: `magex import-tb2j` (pickle or exchange.out), `magex export --to vampire|uppasd|spirit|mumax3`
 
 ## 0.2.0 (2026-11-12)
 

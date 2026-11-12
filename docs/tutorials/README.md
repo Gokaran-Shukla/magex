@@ -29,6 +29,7 @@ own from a model Hamiltonian or a material library.
 | 14 | [First-principles torques and spin pumping](14_first_principles_sot.md) | θ from spin/orbital Hall conductivities, orbital torque, Δα, ISHE voltage | seconds |
 | 15 | [Finite temperature: Callen–Callen and LLB](15_temperature_llb.md) | A(T), K(T), Ms(T) from mean field or Monte Carlo; LLB + two-temperature model, ultrafast demagnetisation | 1 min |
 | 16 | [Performance: threads, MPI, GPU, restarts](16_performance.md) | parallel options, CuPy backend (experimental), checkpoint/restart | – |
+| 17 | [Interoperability](17_interoperability.md) | TB2J import; VAMPIRE, UppASD, Spirit, mumax³ export | seconds |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

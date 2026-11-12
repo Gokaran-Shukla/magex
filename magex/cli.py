@@ -11,6 +11,8 @@
   magex params    results.json atomistic -> micromagnetic parameters (Ms, A, D, K)
   magex tc        results.json fast ordering-temperature estimates: mean field, RPA, quantum-rescaled
   magex model     out.json     write a model spin Hamiltonian (lattice, J, D, K) in results.json format
+  magex import-tb2j TB2J_results/ [--out results.json]   use TB2J exchange with every magex engine
+  magex export    results.json|input.toml --to vampire|uppasd|spirit|mumax3 [--outdir DIR]
 """
 from __future__ import annotations
 
@@ -110,7 +112,7 @@ def _raw_cfg(path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="magex", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "gneb", "mc", "micromag", "params", "tc", "model"])
+    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "sqw", "gneb", "mc", "micromag", "params", "tc", "model", "import-tb2j", "export"])
     ap.add_argument("config", help="input TOML (results.json for 'params', output path for 'model')")
     ap.add_argument("--field", type=float, nargs=3, default=None, help="llg: override B (T)")
     ap.add_argument("--J", default="mft", help="params: mft | bruno | downfold")
@@ -124,6 +126,9 @@ def main(argv=None):
     ap.add_argument("--K", type=float, default=0.0)
     ap.add_argument("--moment", type=float, default=2.0)
     ap.add_argument("--order", default="ferro")
+    ap.add_argument("--out", default="results_tb2j.json", help="import-tb2j: output file")
+    ap.add_argument("--to", default="vampire", help="export: vampire | uppasd | spirit | mumax3")
+    ap.add_argument("--outdir", default=None, help="export: output directory (or .mx3 file)")
     a = ap.parse_args(argv)
     if a.task in ("run", "magnon"):
         cfg = load_cfg(a.config)
@@ -177,6 +182,22 @@ def main(argv=None):
         if lmax > lam0 + 1e-9:
             print(f"  WARNING: J(q) maximum at q = {np.round(q, 3).tolist()} -> the reference is not the ground state")
         print("  classical Monte Carlo: magex mc <input.toml>")
+    elif a.task == "import-tb2j":
+        from .interop import read_tb2j
+        d = read_tb2j(a.config)
+        with open(a.out, "w") as f:
+            json.dump(d, f)
+        print(f"{len(d['pairs'])} TB2J couplings of {len(d['mag_pos'])} magnetic sites -> {a.out}")
+    elif a.task == "export":
+        from . import interop
+        if a.to == "mumax3":
+            cfg, _ = _raw_cfg(a.config)
+            out = interop.export_mumax3(cfg, a.outdir or os.path.splitext(a.config)[0] + ".mx3")
+        else:
+            fn = {"vampire": interop.export_vampire, "uppasd": interop.export_uppasd,
+                  "spirit": interop.export_spirit}[a.to]
+            out = fn(a.config, a.outdir or f"{a.to}_input", J=a.J, rcut=a.rcut)
+        print(f"{a.to} input written to {out}")
     elif a.task == "model":
         from .models import write_model
         write_model(a.config, lattice=a.lattice, a=a.a, J=a.Jnn, D=a.D, dmi=a.dmi, K=a.K, moment=a.moment,
