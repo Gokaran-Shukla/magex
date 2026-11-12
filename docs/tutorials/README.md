@@ -20,6 +20,8 @@ own from a model Hamiltonian or a material library.
 | 5 | [Thin-film recipes](05_thin_film_recipes.md) | skyrmion disk, labyrinth → skyrmions, PMA hysteresis, vortex, SOT switching, B20 helix, multilayers | 1–10 min |
 | 6 | [Multiscale: DFT → micromagnetics](06_multiscale.md) | A, D, K, Ms from first-principles exchange; CrI3 flake | minutes |
 | 7 | [Python API](07_python_api.md) | scripting all solvers, custom fields, custom geometries | – |
+| 8 | [Gilbert damping from first principles](08_damping.md) | α tensor vs broadening from the Wannier Hamiltonian, feeding LLG and micromagnetics | minutes (MPI) |
+| 9 | [Quantum corrections](09_quantum_statistics.md) | RPA T_C, (S+1)/S rescaling, quantum (Planck) thermostat for LLG | seconds |
 | – | [Conventions and units](conventions.md) | energy convention, units, sign of DMI, boundary conditions | – |
 
 All inputs live in [`examples/spindyn`](../../examples/spindyn) and [`examples/micromag`](../../examples/micromag);

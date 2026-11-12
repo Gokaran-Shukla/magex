@@ -266,6 +266,17 @@ def run_mc_config(cfg, base=".", log=print):
         est = est_r
         est["refined"] = True
     est["T_MF"] = Tmf
+    try:
+        from .quantum import quantum_rescale, rpa_tc
+        T_rpa, _ = rpa_tc(uc)
+        est["T_RPA"] = T_rpa
+        est["T_quantum_rescaled"], est["S"] = quantum_rescale(est["Tc"], uc.moments)
+        est["T_RPA_quantum"] = quantum_rescale(T_rpa, uc.moments)[0]
+        log(f"  RPA (Tyablikov) estimate: {T_rpa:.1f} K;  spin S = {est['S']:.2f}: quantum-rescaled "
+            f"(S+1)/S x T_MC = {est['T_quantum_rescaled']:.1f} K, x T_RPA = {est['T_RPA_quantum']:.1f} K "
+            "(localized moments only)")
+    except Exception as exc:  # pragma: no cover
+        log(f"  RPA estimate skipped: {exc}")
     est["kind"] = kind
     est["label"] = label
     est["field"] = B.tolist()

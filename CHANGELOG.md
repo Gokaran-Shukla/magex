@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 (in development, branch `dev-0.3`)
+
+- `magex damping`: Gilbert damping tensor from the Wannier Hamiltonian (torque-correlation /
+  Kambersky formula; SOC- and exchange-torque forms; intra- and interband parts; direction
+  dependence; electronic temperature; MPI over k); alpha can be read by `magex llg` and
+  `magex micromag` (`alpha = {from = "damping_n001.json", eta_meV = 50}`)
+- quantum thermostat for the atomistic LLG (Planck-spectrum coloured noise, `thermostat = "quantum"`)
+- RPA (Tyablikov) ordering temperature with sublattices and anisotropy gap, quantum (S+1)/S
+  rescaling; `magex tc` and extra fields in the Monte Carlo `tc_estimate.json`
+
 ## 0.2.0 (2026-11-12)
 
 Simulation engines on top of the exchange calculation.

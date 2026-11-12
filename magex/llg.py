@@ -29,20 +29,31 @@ def llg_rhs(e, B, alpha, precession=True):
 
 
 class LLGSolver:
-    def __init__(self, system, alpha=0.1, dt=1e-3, temperature=0.0, seed=None, precession=True):
+    def __init__(self, system, alpha=0.1, dt=1e-3, temperature=0.0, seed=None, precession=True,
+                 thermostat="classical"):
+        """thermostat: "classical" (white Brown noise, Boltzmann statistics) or "quantum"
+        (coloured Planck-spectrum noise, Bose statistics of the magnons; see magex.quantum)."""
         self.sys = system
         self.alpha = float(alpha)
         self.dt = float(dt)
         self.T = float(temperature)
         self.rng = np.random.default_rng(seed)
+        self.seed = seed
         self.precession = bool(precession)
+        self.thermostat = thermostat
+        self._qnoise = None
         self.time = 0.0
 
     def thermal_field(self):
         if self.T <= 0:
             return 0.0
-        sigma = np.sqrt(2.0 * self.alpha * K_B * self.T / (GAMMA * self.sys.mu * MU_B * self.dt))
-        return sigma[:, None] * self.rng.normal(size=(self.sys.N, 3))
+        sigma2 = 2.0 * self.alpha * K_B * self.T / (GAMMA * self.sys.mu * MU_B * self.dt)
+        if self.thermostat == "quantum":
+            if self._qnoise is None or self._qnoise.T != self.T:
+                from .quantum import QuantumNoise
+                self._qnoise = QuantumNoise(self.sys.N, sigma2, self.dt, self.T, seed=self.rng.integers(1 << 31))
+            return self._qnoise()
+        return np.sqrt(sigma2)[:, None] * self.rng.normal(size=(self.sys.N, 3))
 
     def step(self, e):
         """One stochastic-Heun step; returns new spins."""
@@ -109,11 +120,13 @@ def run_llg_config(cfg, base=".", field_override=None, log=print):
     from .spinmodel import SpinSystem, build_from_config
     from . import texture
 
+    from .damping import resolve_alpha
     uc, sm = build_from_config(cfg, base)
     c = dict(dict(alpha=0.1, dt=1e-3, steps=10000, temperature=0.0, field=[0.0, 0.0, 0.0], init="random",
-                  init_axis=[0, 0, 1], seed=1, output_every=100, snapshots=12, gif=False, precession=True,
+                  init_axis=[0, 0, 1], seed=1, thermostat="classical", output_every=100, snapshots=12, gif=False, precession=True,
                   plane="xy", layer=0, outdir="llg_out", torque_tol=None, compare_field=False,
                   anneal=None, init_file=None), **cfg.get("llg", {}))
+    c["alpha"] = resolve_alpha(c["alpha"], base)
     outdir = c["outdir"] if os.path.isabs(c["outdir"]) else os.path.join(base, c["outdir"])
     os.makedirs(outdir, exist_ok=True)
     fields = [np.asarray(c["field"], float) if field_override is None else np.asarray(field_override, float)]
@@ -133,7 +146,8 @@ def run_llg_config(cfg, base=".", field_override=None, log=print):
             f"T = {c['temperature']} K, {c['steps']} steps")
         e = e_init.copy()
         tables = []
-        solver = LLGSolver(system, c["alpha"], c["dt"], c["temperature"], c["seed"], c["precession"])
+        solver = LLGSolver(system, c["alpha"], c["dt"], c["temperature"], c["seed"], c["precession"],
+                           c["thermostat"])
         if c["anneal"]:
             # anneal = {T_start, steps}: linear cooling to the target temperature first
             a = c["anneal"]

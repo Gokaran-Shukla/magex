@@ -55,6 +55,9 @@ def build(cfg, base=".", log=print):
             mat.update(Ms=mp["Ms"], A=mp["A"], D=D, dmi="interfacial" if abs(mp["D_int"]) >= abs(mp["D_bulk"]) else "bulk",
                        Ku1=mp["Ku"], anisU=[0, 0, 1])
         mat.update({k2: v for k2, v in r.items() if k2 in _MAT_KEYS})
+        if isinstance(mat.get("alpha"), dict):          # alpha = {from = "damping_n001.json", eta_meV = 50}
+            from ..damping import resolve_alpha
+            mat["alpha"] = resolve_alpha(mat["alpha"], base)
         shape = r.get("shape", "rectangle")
         gp = {k2: v for k2, v in r.items() if k2 in _GEOM_KEYS}
         if "path" in gp and not os.path.isabs(gp["path"]):

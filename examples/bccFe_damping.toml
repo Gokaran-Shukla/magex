@@ -1,0 +1,22 @@
+# Gilbert damping of bcc Fe from the Wannier Hamiltonian (torque-correlation / Kambersky)
+#   magex damping bccFe_damping.toml          (MPI: mpirun -n 40 magex damping bccFe_damping.toml)
+[input]
+win = "Fe_up.win"
+hr_up = "Fe_up_hr.dat"
+hr_dn = "Fe_down_hr.dat"
+centres = "Fe_up_centres.xyz"
+efermi = 12.6256
+
+[magnetic]
+elements = ["Fe"]
+
+[calc]
+outdir = "damping"
+
+[damping]
+soc = "atomic"                    # collinear input: add xi L.S (default xi table, or [soc_xi])
+kmesh = [110, 110, 110]           # converged for eta >= 20 meV; small eta needs denser meshes
+eta_meV = [5, 10, 20, 50, 100, 200, 500]
+forms = ["soc", "exchange"]       # "soc" = [sigma, H_so] torque (recommended); "exchange" for comparison
+directions = [[0, 0, 1], [1, 1, 0]]
+kT_meV = 0.0                      # electronic temperature (Fermi-surface smearing), optional

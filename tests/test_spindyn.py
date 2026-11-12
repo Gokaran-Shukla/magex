@@ -109,3 +109,55 @@ def test_topological_charge_of_skyrmion(tmp):
     e = np.stack([np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th)], 1)
     assert abs(abs(texture.topological_charge(s, e)) - 1.0) < 0.02
     assert abs(texture.topological_charge(s, np.tile([0, 0, 1.0], (s.N, 1)))) < 1e-9
+
+
+def _rashba_fm(lam=0.1):
+    from magex.model import TBModel
+    R = np.array([[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]])
+    H0 = np.zeros((5, 1, 1), complex)
+    X = np.zeros((5, 3, 1, 1), complex)
+    S = np.zeros_like(X)
+    H0[1:] = -1.0
+    X[0, 2] = 0.5
+    S[1, 1], S[2, 1], S[3, 0], S[4, 0] = 1j * lam, -1j * lam, -1j * lam, 1j * lam
+    z = np.zeros(1, int)
+    return TBModel(np.diag([1.0, 1, 10]), np.zeros((1, 3)), ["X"], R, H0, X, S, z, z, z)
+
+
+def test_damping_torque_forms_agree_and_vanish_without_soc():
+    from magex.damping import gilbert_damping, scalar
+    m = _rashba_fm()
+    r = gilbert_damping(m, -1.0, (0, 0, 1), (120, 120, 1), [0.005, 0.1], shift=(0.5, 0.5, 0), log=lambda *a: None)
+    ex, so = scalar(r, "exchange"), scalar(r, "soc")
+    assert abs(ex[0] / so[0] - 1) < 5e-3            # identical as eta -> 0
+    assert np.all(so > 0)
+    a = np.array(r["alpha"]["soc"])[0]
+    assert np.allclose(a, a.T, atol=1e-10)           # symmetric, uniaxial for n || z
+    m.S[:] = 0
+    r = gilbert_damping(m, -1.0, (0, 0, 1), (120, 120, 1), [0.005, 0.01], forms=("exchange",),
+                        shift=(0.5, 0.5, 0), log=lambda *a: None)
+    e = scalar(r, "exchange")
+    assert e[1] / e[0] > 1.6                          # no SOC: only the O(eta) artefact remains
+
+
+def test_rpa_simple_cubic_watson(tmp):
+    from magex.quantum import rpa_tc
+    p = tmp / "sc.json"
+    write_model(str(p), lattice="sc", J=[1.0])
+    T_rpa, T_mf = rpa_tc(load_results(str(p)), nq=32)
+    exact = (2 / 3) * 6.0 / (1.516386 * K_B)         # Watson integral of the sc lattice
+    assert abs(T_rpa / exact - 1) < 0.03
+    assert T_rpa < T_mf
+
+
+def test_quantum_noise_planck_spectrum():
+    from magex.quantum import HBAR_MEV_PS, QuantumNoise, planck
+    dt, T, N, n = 2e-3, 10.0, 60, 2 ** 13
+    q = QuantumNoise(N, 2.0 / dt, dt, T, seed=1)          # D = 1
+    b = np.array([q()[:, 0] for _ in range(n)])
+    w = np.fft.rfftfreq(n, dt) * 2 * np.pi
+    P = (np.abs(np.fft.rfft(b, axis=0)) ** 2).mean(1) * dt / n
+    x = w * HBAR_MEV_PS / (K_B * T)
+    for lo, hi in ((0.5, 1.5), (2.0, 3.0), (4.0, 6.0)):
+        sel = (x > lo) & (x < hi)
+        assert abs(P[sel].mean() / (2 * planck(x[sel]).mean()) - 1) < 0.08

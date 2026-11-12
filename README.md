@@ -17,8 +17,10 @@ Python package. MPI/multithreaded on CPUs.**
 
 | engine | command | highlights |
 |--------|---------|-----------|
+| **Gilbert damping from DFT** | `magex damping` | torque-correlation α tensor vs broadening (intra/interband), anisotropy, MPI; feeds LLG and micromagnetics |
+| **Fast T_C estimates** | `magex tc` | mean field, RPA (Tyablikov, multi-sublattice, anisotropy gap), quantum (S+1)/S |
 | **Exchange from DFT** | `magex run` | rotationally invariant LKAG (sum rule to 1e-15), full 3×3 J + DMI + SIA from one run, Bruno renormalisation, ligand downfolding, Lloyd finite-angle energies, LSWT magnons |
-| **Atomistic spin dynamics** | `magex llg` | stochastic LLG (Heun), any lattice, full tensors, field off/on comparison, textures + topological charge, GIFs |
+| **Atomistic spin dynamics** | `magex llg` | stochastic LLG (Heun) with classical or quantum (Planck) thermostat, any lattice, full tensors, field off/on comparison, textures + topological charge, GIFs |
 | **Monte Carlo** | `magex mc` | vectorised Metropolis + over-relaxation (graph colouring), automatic FM/AFM/ferri order parameter, Binder crossing → T_C / T_N |
 | **Micromagnetics** | `magex micromag` | OOMMF/mumax-style FD solver: Newell demag (FFT, PBC), exchange, interfacial/bulk DMI with chiral BCs, uniaxial/cubic anisotropy, SOT, RK45/Heun/BB, hysteresis, multilayers, OVF 2.0 |
 | **Multiscale bridge** | `magex params` | A, D, K, Ms from the atomistic tensors (validated to 0.05 %) |

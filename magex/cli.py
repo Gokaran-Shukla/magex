@@ -2,10 +2,12 @@
 
   magex run       input.toml   Green's-function exchange from Wannier90 (MPI: mpirun -n N magex run ...)
   magex magnon    input.toml   LSWT magnon bands from results.json
+  magex damping   input.toml   Gilbert damping tensor from the Wannier Hamiltonian (torque correlation, MPI)
   magex llg       input.toml   atomistic stochastic LLG spin dynamics + real-space textures (B on/off)
   magex mc        input.toml   Metropolis Monte Carlo: M(T), chi, C, Binder -> Curie / Neel temperature
   magex micromag  input.toml   finite-difference micromagnetics (thin films, nanostructures, SOT, loops)
   magex params    results.json atomistic -> micromagnetic parameters (Ms, A, D, K)
+  magex tc        results.json fast ordering-temperature estimates: mean field, RPA, quantum-rescaled
   magex model     out.json     write a model spin Hamiltonian (lattice, J, D, K) in results.json format
 """
 from __future__ import annotations
@@ -106,7 +108,7 @@ def _raw_cfg(path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="magex", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("task", choices=["run", "magnon", "llg", "mc", "micromag", "params", "model"])
+    ap.add_argument("task", choices=["run", "magnon", "damping", "llg", "mc", "micromag", "params", "tc", "model"])
     ap.add_argument("config", help="input TOML (results.json for 'params', output path for 'model')")
     ap.add_argument("--field", type=float, nargs=3, default=None, help="llg: override B (T)")
     ap.add_argument("--J", default="mft", help="params: mft | bruno | downfold")
@@ -132,6 +134,9 @@ def main(argv=None):
                     magnon_from_results(cfg)
         else:
             magnon_from_results(cfg)
+    elif a.task == "damping":
+        from .damping import run_damping
+        run_damping(load_cfg(a.config))
     elif a.task == "llg":
         from .llg import run_llg_config
         cfg, base = _raw_cfg(a.config)
@@ -148,6 +153,20 @@ def main(argv=None):
         from .micromag.bridge import micromagnetic_parameters
         out = micromagnetic_parameters(a.config, J=a.J, rcut=a.rcut, thickness_A=a.thickness, log=print)
         print(json.dumps(out, indent=1))
+    elif a.task == "tc":
+        from .quantum import quantum_rescale, rpa_tc
+        from .spinmodel import load_results, jq_stability
+        uc = load_results(a.config, J=a.J, rcut=a.rcut)
+        T_rpa, T_mf = rpa_tc(uc, log=print)
+        lam0, lmax, q = jq_stability(uc)
+        Tq, S = quantum_rescale(T_rpa, uc.moments)
+        print(f"{a.config}: rcut = {uc.info['rcut']:.2f} A, {len(uc.info['shells'])} shells, S = {S:.2f}")
+        print(f"  mean field  T_MF  = {T_mf:8.1f} K")
+        print(f"  RPA         T_RPA = {T_rpa:8.1f} K   (Tyablikov, classical spins)")
+        print(f"  RPA x (S+1)/S     = {Tq:8.1f} K   (quantum spins, localized moments)")
+        if lmax > lam0 + 1e-9:
+            print(f"  WARNING: J(q) maximum at q = {np.round(q, 3).tolist()} -> the reference is not the ground state")
+        print("  classical Monte Carlo: magex mc <input.toml>")
     elif a.task == "model":
         from .models import write_model
         write_model(a.config, lattice=a.lattice, a=a.a, J=a.Jnn, D=a.D, dmi=a.dmi, K=a.K, moment=a.moment,
