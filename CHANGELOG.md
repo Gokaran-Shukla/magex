@@ -2,6 +2,9 @@
 
 ## 0.3.0 (in development, branch `dev-0.3`)
 
+- packaging: PyPI trusted-publishing workflow, conda recipe, ReadTheDocs/MkDocs site, executed notebooks,
+  example smoke tests in CI, JOSS paper draft (paper/)
+
 - `magex damping`: Gilbert damping tensor from the Wannier Hamiltonian (torque-correlation /
   Kambersky formula; SOC- and exchange-torque forms; intra- and interband parts; direction
   dependence; electronic temperature; MPI over k); alpha can be read by `magex llg` and

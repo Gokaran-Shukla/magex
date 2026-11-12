@@ -34,7 +34,7 @@ thermostat = "quantum"      # default "classical"
 ```
 
 The white thermal noise is replaced by coloured noise with the Planck spectrum
-S(ω) ∝ x/(eˣ − 1), x = ħω/k_BT (Barker & Bauer, PRL 122, 186601 (2019)), so that magnons of energy
+S(ω) ∝ x/(eˣ − 1), x = ħω/k_BT (Barker & Bauer, PRB 100, 140401(R) (2019)), so that magnons of energy
 ħω ≫ k_BT are frozen out.  The spectrum is represented by 23 damped-oscillator and Lorentzian
 Ornstein–Uhlenbeck processes (max. error 2 × 10⁻³), each integrated exactly over the time step.
 

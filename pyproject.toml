@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "magex"
-version = "0.2.0"
+version = "0.3.0"
 description = "From Wannier90 Hamiltonians to devices: Green's-function exchange tensors, DMI and anisotropy, LSWT magnons, atomistic LLG spin dynamics, Monte Carlo T_C/T_N and finite-difference micromagnetics"
 readme = "README.md"
 license = {text = "MIT"}
@@ -36,3 +36,6 @@ magex = "magex.cli:main"
 
 [tool.setuptools]
 packages = ["magex", "magex.micromag"]
+
+[tool.setuptools.package-data]
+magex = ["py.typed"]

@@ -1,0 +1,35 @@
+site_name: magex
+site_description: From Wannier Hamiltonians to magnetic textures, ordering temperatures and micromagnetics
+repo_url: https://github.com/Gokaran-Shukla/magex
+docs_dir: docs
+theme:
+  name: material
+  features: [navigation.sections, content.code.copy]
+markdown_extensions:
+  - tables
+  - admonition
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Overview: tutorials/README.md
+      - 1 Spin model: tutorials/01_spin_model.md
+      - 2 LLG and textures: tutorials/02_llg_textures.md
+      - 3 Monte Carlo T_C / T_N: tutorials/03_monte_carlo_Tc.md
+      - 4 Micromagnetics basics: tutorials/04_micromagnetics_basics.md
+      - 5 Thin-film recipes: tutorials/05_thin_film_recipes.md
+      - 6 Multiscale: tutorials/06_multiscale.md
+      - 7 Python API: tutorials/07_python_api.md
+      - 8 Gilbert damping: tutorials/08_damping.md
+      - 9 Quantum corrections: tutorials/09_quantum_statistics.md
+      - 10 Magnon spectra: tutorials/10_magnon_spectra.md
+      - 11 Energy barriers: tutorials/11_energy_barriers.md
+      - 12 Antiferro/altermagnets: tutorials/12_antiferromagnets.md
+      - 13 Spin torques: tutorials/13_spin_torques.md
+      - 14 First-principles torques: tutorials/14_first_principles_sot.md
+      - 15 Finite temperature / LLB: tutorials/15_temperature_llb.md
+      - 16 Performance: tutorials/16_performance.md
+      - 17 Interoperability: tutorials/17_interoperability.md
+      - Conventions: tutorials/conventions.md
+  - Notebooks: notebooks.md

@@ -1,7 +1,6 @@
 """Quantum corrections to classical spin thermodynamics.
 
-1. Quantum thermostat for the stochastic LLG (Barker & Bauer, PRL 122, 186601 (2019); Anders et al.,
-   PRB 105, 104407 (2022)).  The white Brown noise of power 2D is replaced by coloured noise with the
+1. Quantum thermostat for the stochastic LLG (Barker & Bauer, PRB 100, 140401(R) (2019)).  The white Brown noise of power 2D is replaced by coloured noise with the
    Planck spectrum (no zero-point term)
 
        S(omega) = 2 D  x / (e^x - 1),      x = hbar omega / k_B T,
@@ -15,7 +14,7 @@
    gamma_k = g_k k_B T / hbar.  The fit is accurate to ~1e-3 for 0 <= x <= 20.
 
 2. RPA (Tyablikov) ordering temperature from the exchange of results.json (Pajda et al., PRB 64,
-   174402 (2001); Rusz et al., PRB 71, 174408 (2005) for several sublattices):
+   174402 (2001); Rusz et al., PRB 71, 184433 (2005) for several sublattices):
 
        k_B T_RPA = (2/3) [ (1/(n N_q)) sum_q Tr( D - J~(q) )^{-1} ]^{-1},  D_ij = delta_ij sum_l J~_il(0)
 
@@ -46,7 +45,7 @@ def planck(x):
 def fit_planck(xmax=30.0, npts=4000):
     """Positive mixture fit of x/(e^x - 1) (max abs error ~2e-3 on [0, 30]).
 
-    Basis: damped oscillators O^4/((O^2 - x^2)^2 + G^2 x^2) (decay ~ x^-4, Savin et al. PRB 86, 064305)
+    Basis: damped oscillators O^4/((O^2 - x^2)^2 + G^2 x^2) (decay ~ x^-4)
     and Lorentzians g^2/(g^2 + x^2).  Returns list of (kind, O_or_g, G, weight).
     """
     from scipy.optimize import nnls

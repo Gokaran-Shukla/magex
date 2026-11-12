@@ -1,0 +1,47 @@
+{% set version = "0.3.0" %}
+
+package:
+  name: magex
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/m/magex/magex-{{ version }}.tar.gz
+  # sha256: fill in after the PyPI upload
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps
+  entry_points:
+    - magex = magex.cli:main
+
+requirements:
+  host:
+    - python >=3.10
+    - pip
+    - setuptools >=61
+  run:
+    - python >=3.10
+    - numpy >=1.22
+    - scipy
+    - matplotlib-base >=3.5
+    - pillow
+    - tomli  # [py<311]
+
+test:
+  imports:
+    - magex
+    - magex.micromag
+  commands:
+    - magex --help
+
+about:
+  home: https://github.com/Gokaran-Shukla/magex
+  license: MIT
+  license_file: LICENSE
+  summary: Magnetic exchange from Wannier Hamiltonians, atomistic spin dynamics, Monte Carlo and micromagnetics
+  doc_url: https://magex.readthedocs.io
+
+extra:
+  recipe-maintainers:
+    - Gokaran-Shukla

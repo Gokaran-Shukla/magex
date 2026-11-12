@@ -20,9 +20,33 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[sym]" pytest matplotlib
+          pip install -e ".[sym,fast]" pytest
       - name: Run tests
         run: python -m pytest tests -q
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[fast]"
+      - name: Smoke-run examples (shortened)
+        run: |
+          cd examples/micromag
+          sed -i 's/^time_ns = .*/time_ns = 0.02/; s/^npts = .*/npts = 5/' sp4.toml pma_hysteresis.toml
+          magex micromag sp4.toml
+          magex micromag pma_hysteresis.toml
+          magex micromag feGe_helix.toml
+          cd ../spindyn
+          sed -i 's/^steps = .*/steps = 500/; s/^therm_sweeps = .*/therm_sweeps = 50/; s/^meas_sweeps = .*/meas_sweeps = 100/' skyrmion_llg.toml cri3_mc.toml
+          sed -i 's/anneal = .*//' skyrmion_llg.toml
+          magex llg skyrmion_llg.toml
+          magex mc cri3_mc.toml
+          magex tc ../../validation_runs/CrI3_atomic_soc/results.json.gz
+          magex gneb skyrmion_gneb.toml
 
   mpi:
     runs-on: ubuntu-latest

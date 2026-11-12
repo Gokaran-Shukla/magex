@@ -5,7 +5,7 @@ Scaling with the equilibrium magnetisation m_e(T) (from classical mean field, or
 Monte Carlo m(T) curve):   Ms(T) = Ms0 m_e,  A(T) = A0 m_e^a (a ~ 1.66-2),  K(T) = K0 m_e^3
 (uniaxial single-ion, l(l+1)/2 = 3),  D(T) = D0 m_e^a.
 
-LLB (Garanin 1997; Atxitia et al. PRB 75, 064420 (2007)) for the reduced magnetisation m (|m| free):
+LLB (Garanin, PRB 55, 3050 (1997); Atxitia et al., APL 91, 232507 (2007)) for the reduced magnetisation m (|m| free):
 
   dm/dt = -gamma m x B + gamma a_par (m.B) m / m^2 - gamma a_perp m x (m x B) / m^2
   a_par = lambda 2T/(3Tc),  a_perp = lambda (1 - T/(3Tc))  (T < Tc),   a_perp = a_par (T >= Tc)
