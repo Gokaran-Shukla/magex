@@ -81,18 +81,38 @@ if HAVE_NUMBA:
 
     @njit(inline="always")
     def _hfield(i, e, ptr, nbr, Jb):
-        """sum_j J_ij e_j; Jb = (typ, table): neighbour k uses the 3x3 block table[typ[k]]."""
+        """sum_j J_ij e_j; Jb = (typ, table): neighbour k uses table[typ[k]] -- a 3x3 block (9 numbers),
+        isotropic + DMI (4 numbers: J, Dx, Dy, Dz with J e + D x e... see neighbour_blocks) or isotropic (1)."""
         typ, T = Jb
         hx = 0.0
         hy = 0.0
         hz = 0.0
-        for k in range(ptr[i], ptr[i + 1]):
-            j = nbr[k]
-            t = typ[k]
-            ex, ey, ez = e[j, 0], e[j, 1], e[j, 2]
-            hx += T[t, 0] * ex + T[t, 1] * ey + T[t, 2] * ez
-            hy += T[t, 3] * ex + T[t, 4] * ey + T[t, 5] * ez
-            hz += T[t, 6] * ex + T[t, 7] * ey + T[t, 8] * ez
+        w = T.shape[1]
+        if w == 1:
+            for k in range(ptr[i], ptr[i + 1]):
+                j = nbr[k]
+                Jv = T[typ[k], 0]
+                hx += Jv * e[j, 0]
+                hy += Jv * e[j, 1]
+                hz += Jv * e[j, 2]
+        elif w == 4:
+            for k in range(ptr[i], ptr[i + 1]):
+                j = nbr[k]
+                t = typ[k]
+                Jv, Dx, Dy, Dz = T[t, 0], T[t, 1], T[t, 2], T[t, 3]
+                ex, ey, ez = e[j, 0], e[j, 1], e[j, 2]
+                # block J I + antisymmetric part with e_i.J^A.e_j = D.(e_i x e_j): (J^A e_j) = e_j x D
+                hx += Jv * ex + (ey * Dz - ez * Dy)
+                hy += Jv * ey + (ez * Dx - ex * Dz)
+                hz += Jv * ez + (ex * Dy - ey * Dx)
+        else:
+            for k in range(ptr[i], ptr[i + 1]):
+                j = nbr[k]
+                t = typ[k]
+                ex, ey, ez = e[j, 0], e[j, 1], e[j, 2]
+                hx += T[t, 0] * ex + T[t, 1] * ey + T[t, 2] * ez
+                hy += T[t, 3] * ex + T[t, 4] * ey + T[t, 5] * ez
+                hz += T[t, 6] * ex + T[t, 7] * ey + T[t, 8] * ez
         return hx, hy, hz
 
     # ------------------------------------------------------------------ fast parallel Gaussian RNG
@@ -109,34 +129,70 @@ if HAVE_NUMBA:
     def _unif(st, c):
         return (_next(st, c) >> np.uint64(11)) * (1.0 / 9007199254740992.0)
 
+    # Marsaglia-Tsang ziggurat (128 layers) for the normal distribution
+    def _zig_tables():
+        dn = 3.442619855899
+        tn = dn
+        vn = 9.91256303526217e-3
+        m1 = 2147483648.0
+        kn = np.zeros(128)
+        wn = np.zeros(128)
+        fn = np.zeros(128)
+        q = vn / np.exp(-0.5 * dn * dn)
+        kn[0] = (dn / q) * m1
+        kn[1] = 0.0
+        wn[0] = q / m1
+        wn[127] = dn / m1
+        fn[0] = 1.0
+        fn[127] = np.exp(-0.5 * dn * dn)
+        for i in range(126, 0, -1):
+            dn = np.sqrt(-2.0 * np.log(vn / dn + np.exp(-0.5 * dn * dn)))
+            kn[i + 1] = (dn / tn) * m1
+            tn = dn
+            fn[i] = np.exp(-0.5 * dn * dn)
+            wn[i] = dn / m1
+        return kn, wn, fn
+
+    ZKN, ZWN, ZFN = _zig_tables()
+
+    @njit(inline="always")
+    def _hz(st, c):
+        return np.int64(np.int32(np.uint32(_next(st, c) >> np.uint64(32))))
+
+    @njit(inline="always")
+    def _znorm(st, c, kn, wn, fn):
+        hz = _hz(st, c)
+        iz = hz & 127
+        if abs(hz) < kn[iz]:
+            return hz * wn[iz]
+        r = 3.442619855899
+        while True:
+            x = hz * wn[iz]
+            if iz == 0:
+                while True:
+                    x = -np.log(max(_unif(st, c), 1e-300)) * 0.2904764
+                    y = -np.log(max(_unif(st, c), 1e-300))
+                    if y + y >= x * x:
+                        break
+                return r + x if hz > 0 else -r - x
+            if fn[iz] + _unif(st, c) * (fn[iz - 1] - fn[iz]) < np.exp(-0.5 * x * x):
+                return x
+            hz = _hz(st, c)
+            iz = hz & 127
+            if abs(hz) < kn[iz]:
+                return hz * wn[iz]
+
     @njit(parallel=True, cache=True)
     def _gauss3(out, st, scale, pinned):
-        """out[i, :] = scale[i] * N(0, 1)^3 (Marsaglia polar, xorshift64* streams in fixed chunks:
-        results do not depend on the number of threads)."""
+        """out[i, :] = scale[i] * N(0, 1)^3 (ziggurat on xorshift64* streams over fixed chunks: results do
+        not depend on the number of threads)."""
         n = out.shape[0]
         nc = st.size
         chunk = (n + nc - 1) // nc
         for c in prange(nc):
-            a = c * chunk
-            b = min(n, a + chunk)
-            spare = 0.0
-            have = False
-            for i in range(a, b):
+            for i in range(c * chunk, min(n, (c + 1) * chunk)):
                 for comp in range(3):
-                    if have:
-                        g = spare
-                        have = False
-                    else:
-                        while True:
-                            u = 2.0 * _unif(st, c) - 1.0
-                            v = 2.0 * _unif(st, c) - 1.0
-                            s2 = u * u + v * v
-                            if 0.0 < s2 < 1.0:
-                                break
-                        f = np.sqrt(-2.0 * np.log(s2) / s2)
-                        g = u * f
-                        spare = v * f
-                        have = True
+                    g = _znorm(st, c, ZKN, ZWN, ZFN)
                     out[i, comp] = 0.0 if pinned[i] else scale[i] * g
 
     @njit(parallel=True, cache=True)
@@ -149,7 +205,10 @@ if HAVE_NUMBA:
                 out[i, 2] = 0.0
                 continue
             hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
-            gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+            if A.shape[0] > 0:
+                gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+            else:
+                gx = gy = gz = 0.0
             inv = 1.0 / (mu[i] * MU_B)
             out[i, 0] = (2 * hx - gx) * inv + B[0]
             out[i, 1] = (2 * hy - gy) * inv + B[1]
@@ -246,7 +305,10 @@ if HAVE_NUMBA:
     @njit(inline="always")
     def _bloc(i, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u):
         hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
-        gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+        if A.shape[0] > 0:
+            gx, gy, gz = _onsite_grad(i, e[i, 0], e[i, 1], e[i, 2], A, Kc, C, K2, K3, u, has_c, has_u)
+        else:
+            gx = gy = gz = 0.0
         inv = 1.0 / (mu[i] * MU_B)
         return (2 * hx - gx) * inv + B[0], (2 * hy - gy) * inv + B[1], (2 * hz - gz) * inv + B[2]
 
@@ -283,22 +345,9 @@ if HAVE_NUMBA:
                     ep[i, 0], ep[i, 1], ep[i, 2] = e[i, 0], e[i, 1], e[i, 2]
                     continue
                 if noisy:
-                    for comp in range(3):
-                        if have:
-                            g = spare
-                            have = False
-                        else:
-                            while True:
-                                u_ = 2.0 * _unif(st, c) - 1.0
-                                v_ = 2.0 * _unif(st, c) - 1.0
-                                s2 = u_ * u_ + v_ * v_
-                                if 0.0 < s2 < 1.0:
-                                    break
-                            f_ = np.sqrt(-2.0 * np.log(s2) / s2)
-                            g = u_ * f_
-                            spare = v_ * f_
-                            have = True
-                        b[i, comp] = sig[i] * g
+                    b[i, 0] = sig[i] * _znorm(st, c, ZKN, ZWN, ZFN)
+                    b[i, 1] = sig[i] * _znorm(st, c, ZKN, ZWN, ZFN)
+                    b[i, 2] = sig[i] * _znorm(st, c, ZKN, ZWN, ZFN)
                 bx, by, bz = _bloc(i, e, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u)
                 bx += b[i, 0]
                 by += b[i, 1]
@@ -338,7 +387,8 @@ if HAVE_NUMBA:
 
     # ------------------------------------------------------------------ Monte Carlo
     @njit(parallel=True, cache=True)
-    def _mc_group(e, idx, st, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, beta, sigma, move, overrelax):
+    def _mc_group(e, idx, st, ptr, nbr, Jb, A, mu, B, Kc, C, K2, K3, u, has_c, has_u, beta, sigma, move, overrelax,
+                  has_A=True):
         """One pass over the mutually non-interacting sites idx.  move: 0 gaussian, 1 uniform, 2 heat bath
         (exact sampling of exp(beta H.e) for the linear field, Metropolis-corrected for the on-site terms);
         overrelax: reflection about H, accepted with the on-site energy change (H.e is conserved).
@@ -348,6 +398,9 @@ if HAVE_NUMBA:
         chunk = (n + nc - 1) // nc
         acc = np.zeros(nc, np.int64)
         for c in prange(nc):
+            spare = 0.0
+            have = False
+            nacc = 0
             for t in range(c * chunk, min(n, (c + 1) * chunk)):
                 i = idx[t]
                 hx, hy, hz = _hfield(i, e, ptr, nbr, Jb)
@@ -399,27 +452,50 @@ if HAVE_NUMBA:
                     nz = cth * zz + sn * (np.cos(ph) * t1z + np.sin(ph) * t2z)
                     lin = False
                 else:
-                    # Gaussian / uniform proposals (Box-Muller from the stream)
-                    g = np.empty(4)
-                    for kk in range(2):
-                        r1 = max(_unif(st, c), 1e-300)
-                        r2 = _unif(st, c)
-                        rr = np.sqrt(-2 * np.log(r1))
-                        g[2 * kk] = rr * np.cos(2 * np.pi * r2)
-                        g[2 * kk + 1] = rr * np.sin(2 * np.pi * r2)
+                    # Gaussian / uniform proposals: Marsaglia polar pairs, the spare is kept for the next site
+                    gg0 = 0.0
+                    gg1 = 0.0
+                    gg2 = 0.0
+                    for comp in range(3):
+                        if have:
+                            gv = spare
+                            have = False
+                        else:
+                            while True:
+                                u_ = 2.0 * _unif(st, c) - 1.0
+                                v_ = 2.0 * _unif(st, c) - 1.0
+                                s2 = u_ * u_ + v_ * v_
+                                if 0.0 < s2 < 1.0:
+                                    break
+                            f_ = np.sqrt(-2.0 * np.log(s2) / s2)
+                            gv = u_ * f_
+                            spare = v_ * f_
+                            have = True
+                        if comp == 0:
+                            gg0 = gv
+                        elif comp == 1:
+                            gg1 = gv
+                        else:
+                            gg2 = gv
                     if move == 0:
-                        nx, ny, nz = ox + sigma * g[0], oy + sigma * g[1], oz + sigma * g[2]
+                        nx, ny, nz = ox + sigma * gg0, oy + sigma * gg1, oz + sigma * gg2
                     else:
-                        nx, ny, nz = g[0], g[1], g[2]
+                        nx, ny, nz = gg0, gg1, gg2
                     q = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
                     nx, ny, nz = nx * q, ny * q, nz * q
-                dE = _onsite_E(i, nx, ny, nz, A, Kc, C, K2, K3, u, has_c, has_u) - \
-                    _onsite_E(i, ox, oy, oz, A, Kc, C, K2, K3, u, has_c, has_u)
+                dE = 0.0
+                if has_A or has_c or has_u:
+                    dE = _onsite_E(i, nx, ny, nz, A, Kc, C, K2, K3, u, has_c, has_u) - \
+                        _onsite_E(i, ox, oy, oz, A, Kc, C, K2, K3, u, has_c, has_u)
                 if lin:
                     dE -= Hx * (nx - ox) + Hy * (ny - oy) + Hz * (nz - oz)
-                if dE <= 0 or _unif(st, c) < np.exp(-min(dE * bt, 700.0)):
+                ok = dE <= 0
+                if not ok:
+                    ok = _unif(st, c) < np.exp(-min(dE * bt, 700.0))
+                if ok:
                     e[i, 0], e[i, 1], e[i, 2] = nx, ny, nz
-                    acc[c] += 1
+                    nacc += 1
+            acc[c] = nacc
         return acc.sum()
 
 
@@ -532,6 +608,18 @@ def neighbour_blocks(Jsp, N):
     if len(table) > 0.5 * len(Jb):                                  # no translational symmetry to exploit
         table = Jb
         typ = np.arange(len(Jb))
+    # compact storage: isotropic (1 number) or isotropic + DMI (4 numbers) when exact
+    M = table.reshape(-1, 3, 3)
+    S = 0.5 * (M + M.transpose(0, 2, 1))
+    iso = np.trace(M, axis1=1, axis2=2) / 3
+    tol = 1e-14 * max(float(np.abs(M).max()), 1e-300)
+    if np.all(np.abs(S - iso[:, None, None] * np.eye(3)) <= tol):
+        Aq = 0.5 * (M - M.transpose(0, 2, 1))
+        D = np.stack([Aq[:, 1, 2], Aq[:, 2, 0], Aq[:, 0, 1]], 1)       # J^A_ab = eps_abc D_c convention
+        if np.all(np.abs(D) <= tol):
+            table = iso[:, None].copy()
+        else:
+            table = np.column_stack([iso, D])
     return ptr, nbr, (typ.ravel().astype(np.int32), np.ascontiguousarray(table))
 
 
@@ -575,14 +663,15 @@ class FastModel:
         return g
 
     def args(self):
-        return (self.ptr, self.nbr, self.Jb, self.A, self.mu, np.asarray(self.sys.B, float), self.Kc, self.C, self.K2,
+        A = self.A if (self.sys.has_A or self.has_c or self.has_u) else np.zeros((0, 3, 3))
+        return (self.ptr, self.nbr, self.Jb, A, self.mu, np.asarray(self.sys.B, float), self.Kc, self.C, self.K2,
                 self.K3, self.u, self.has_c, self.has_u, self.pinned)
 
     def field(self, e, out=None, extra=None):
         out = np.empty_like(e) if out is None else out
         has_extra = extra is not None
         ex = extra if has_extra else np.zeros((1, 3))
-        _field(e, out, self.ptr, self.nbr, self.Jb, self.A, self.mu, np.asarray(self.sys.B, float), self.Kc,
+        _field(e, out, self.ptr, self.nbr, self.Jb, self.args()[3], self.mu, np.asarray(self.sys.B, float), self.Kc,
                self.C, self.K2, self.K3, self.u, self.has_c, self.has_u, self.pinned, ex, has_extra)
         return out
 

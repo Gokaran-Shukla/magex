@@ -45,7 +45,7 @@ class SpinLattice:
         if J0 is None:                                   # isotropic part of the static coupling of every bond
             from .fast import neighbour_blocks
             ptr, nbr, (typ, table) = neighbour_blocks(system.Jsp, system.N)
-            iso = (table[:, 0] + table[:, 4] + table[:, 8]) / 3
+            iso = table[:, 0] if table.shape[1] in (1, 4) else (table[:, 0] + table[:, 4] + table[:, 8]) / 3
             src = np.repeat(np.arange(system.N), np.diff(ptr))
             key = src.astype(np.int64) * system.N + nbr
             lut = dict(zip(key.tolist(), iso[typ].tolist()))

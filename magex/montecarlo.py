@@ -170,11 +170,12 @@ class MetropolisMC:
             mv = 0
         args = fm.args()[:-1]
         for idx in self._fidx:
-            self.accepted += int(fast._mc_group(e, idx, self._streams, *args, beta, self.sigma, mv, False))
+            self.accepted += int(fast._mc_group(e, idx, self._streams, *args, beta, self.sigma, mv, False,
+                                                self.sys.has_A))
             self.tried += len(idx)
         for _ in range(self.overrelax):
             for idx in self._fidx:
-                fast._mc_group(e, idx, self._streams, *args, beta, self.sigma, 0, True)
+                fast._mc_group(e, idx, self._streams, *args, beta, self.sigma, 0, True, self.sys.has_A)
         return e
 
     def sweep(self, e):
