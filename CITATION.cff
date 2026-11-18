@@ -9,11 +9,11 @@ authors:
 version: 0.5.0
 date-released: 2026-11-12
 license: MIT
-doi: "10.5281/zenodo.24185613"
+doi: "10.5281/zenodo.24161158"
 identifiers:
   - type: doi
-    value: "10.5281/zenodo.24185613"
-    description: "Zenodo archive of version 0.3.0"
+    value: "10.5281/zenodo.24161158"
+    description: "Zenodo archive of version 0.5.0"
 repository-code: "https://github.com/Gokaran-Shukla/magex"
 keywords:
   - magnetic exchange
