@@ -4,10 +4,16 @@ title: "magex: from Wannier Hamiltonians to magnetic textures, ordering temperat
 authors:
   - family-names: Shukla
     given-names: Gokaran
+    orcid: "https://orcid.org/0000-0001-9332-3332"
     affiliation: "King Abdullah University of Science and Technology (KAUST)"
 version: 0.5.0
 date-released: 2026-11-12
 license: MIT
+doi: "10.5281/zenodo.24185613"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.24185613"
+    description: "Zenodo archive of version 0.3.0"
 repository-code: "https://github.com/Gokaran-Shukla/magex"
 keywords:
   - magnetic exchange

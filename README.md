@@ -4,6 +4,7 @@
 spin dynamics (LLG), Monte Carlo ordering temperatures and finite-difference micromagnetics, in one
 Python package. MPI/multithreaded on CPUs.**
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24185613.svg)](https://doi.org/10.5281/zenodo.24185613)
 [![tests](https://github.com/Gokaran-Shukla/magex/actions/workflows/tests.yml/badge.svg)](https://github.com/Gokaran-Shukla/magex/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -464,7 +465,23 @@ docs/                 theory slides, tutorials/
 
 ## Citing
 
-If you use magex, please cite this repository (see [`CITATION.cff`](CITATION.cff)) and the method papers:
+If magex helps your work, please cite the software:
+
+> G. Shukla, *magex: from Wannier Hamiltonians to magnetic textures, ordering temperatures and micromagnetics* (2026). Zenodo. https://doi.org/10.5281/zenodo.24185613
+
+```bibtex
+@software{shukla_magex_2026,
+  author    = {Shukla, Gokaran},
+  title     = {magex: from Wannier Hamiltonians to magnetic textures, ordering temperatures and micromagnetics},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.24185613},
+  url       = {https://github.com/Gokaran-Shukla/magex},
+  note      = {Zenodo archive of v0.3.0; newer releases on GitHub}
+}
+```
+
+GitHub's **"Cite this repository"** button (from `CITATION.cff`) gives the same reference. Please also cite the method papers:
 
 - A. I. Liechtenstein, M. I. Katsnelson, V. P. Antropov, V. A. Gubanov, J. Magn. Magn. Mater. **67**, 65 (1987)
 - V. P. Antropov, M. I. Katsnelson, A. I. Liechtenstein, Physica B **237–238**, 336 (1997)
