@@ -1,5 +1,7 @@
 # magex
 
+📘 **Complete manual (PDF):** [docs/magex_manual.pdf](docs/magex_manual.pdf) — documentation, tutorials and quizzes in one file.
+
 **From first principles to devices: magnetic exchange tensors from Wannier90 Hamiltonians, atomistic
 spin dynamics (LLG), Monte Carlo ordering temperatures and finite-difference micromagnetics, in one
 Python package. MPI/multithreaded on CPUs.**
