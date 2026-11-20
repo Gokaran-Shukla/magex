@@ -1,5 +1,9 @@
 # 9 · Quantum corrections: RPA T_C and the quantum thermostat
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 Classical spins obey equipartition: every magnon mode holds k_BT regardless of its energy.  This
 underestimates the order at low temperature (no T^{3/2} Bloch law) and, for small spins, the ordering
 temperature.  magex offers three corrections.

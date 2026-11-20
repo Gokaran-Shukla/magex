@@ -1,5 +1,9 @@
 # 8 · Gilbert damping from first principles
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ```bash
 magex damping bccFe_damping.toml          # mpirun -n 40 magex damping ... for dense k-meshes
 ```

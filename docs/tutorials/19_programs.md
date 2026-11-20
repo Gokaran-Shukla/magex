@@ -1,5 +1,9 @@
 # 19 · Simulation programs, integrators, minimisers and harmonic analysis
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 `magex program input.toml` runs the VAMPIRE-style programs (`sim:program`), the Spirit methods and the
 UppASD modes on any `[spinmodel]` + `[structure]`.  Every program writes CSV tables, a figure, and the final
 spins as NPZ/CSV, VTK (ParaView: Glyph filter) and extended XYZ (OVITO).

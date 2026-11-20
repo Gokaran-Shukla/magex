@@ -1,5 +1,9 @@
 # 18 · Atomistic structures, extra energy terms and initial textures
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 Everything in this tutorial is driven by a `[structure]` table that `magex llg`, `magex mc`, `magex sqw`,
 `magex gneb` and `magex program` all read.  It edits the supercell built from `[spinmodel]` *before* the
 simulation starts, which is how VAMPIRE (`create:*`, `material:*`), UppASD (`posfile`, `momfile`, random

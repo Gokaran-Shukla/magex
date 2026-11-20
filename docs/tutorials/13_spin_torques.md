@@ -1,5 +1,9 @@
 # 13 · Spin-transfer and spin-orbit torques
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 | torque | input | physics |
 |--------|-------|---------|
 | Zhang–Li STT | `[stt] type = "zhang-li"`, `J = [Jx, Jy, Jz]`, `P`, `beta` | current in plane through textures: −(u·∇)m + β m×(u·∇)m, u = Pgμ_BJ/(2eM_s(1+β²)) |

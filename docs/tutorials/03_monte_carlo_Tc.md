@@ -1,5 +1,9 @@
 # 3 · Monte Carlo: Curie and Néel temperatures
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ```bash
 cd examples/spindyn
 magex mc fe_mc.toml        # bcc Fe      -> T_C

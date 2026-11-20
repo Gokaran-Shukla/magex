@@ -1,5 +1,9 @@
 # 10 · Magnon spectra from spin dynamics
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 Linear spin-wave theory (`magex magnon`) gives the T = 0 harmonic magnons.  Spin dynamics gives the
 full spectrum at any temperature (softening, broadening, lifetimes), and micromagnetics gives the
 long-wavelength spin waves of finite films and devices, including dipolar and DMI effects.

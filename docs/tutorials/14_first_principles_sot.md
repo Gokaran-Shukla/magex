@@ -1,5 +1,9 @@
 # 14 · Torque efficiencies from first principles, and spin pumping
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ## SOT efficiency from spin and orbital Hall conductivities
 
 Instead of a spin Hall angle typed by hand, the damping-like efficiency can be built from the Hall

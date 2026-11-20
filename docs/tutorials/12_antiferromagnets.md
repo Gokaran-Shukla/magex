@@ -1,5 +1,9 @@
 # 12 · Antiferromagnets, ferrimagnets and altermagnets (two-sublattice micromagnetics)
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 Adding an `[afm]` table to any micromagnetic input switches to the two-sublattice solver
 (`magex.micromag.afm.TwoSublatticeMagnet`): two unit-vector fields m_A, m_B with their own M_s, A,
 K, D and α, coupled by

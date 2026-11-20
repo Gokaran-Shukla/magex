@@ -1,5 +1,9 @@
 # 15 · Finite temperature in micromagnetics: Callen–Callen scaling and LLB
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ## Temperature-scaled parameters
 
 ```toml

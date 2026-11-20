@@ -1,5 +1,9 @@
 # 17 · Interoperability: TB2J in, VAMPIRE / UppASD / Spirit / mumax³ out
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ## Use TB2J results with every magex engine
 
 ```bash

@@ -1,5 +1,9 @@
 # 2 · Atomistic LLG spin dynamics and real-space textures
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ```bash
 cd examples/spindyn
 magex llg skyrmion_llg.toml

@@ -1,5 +1,9 @@
 # 20 · mumax3-style micromagnetics
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 The micromagnetic engine (`magex micromag`) now covers the mumax3 feature set used in most scripts.
 `examples/universal/micromag_mumax3_features.toml` uses all of the items below and exports to an `.mx3` script
 with `magex export ... --to mumax3`.

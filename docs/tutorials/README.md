@@ -1,5 +1,9 @@
 # magex tutorials
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 magex covers the whole chain from an electronic-structure calculation to device-scale magnetisation
 dynamics.  Every stage reads the output of the previous one, and every stage can also be started on its
 own from a model Hamiltonian or a material library.

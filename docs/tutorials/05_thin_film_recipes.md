@@ -1,5 +1,9 @@
 # 5 · Thin-film recipes
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 All inputs are in `examples/micromag/`; each runs with `magex micromag <file>.toml`.
 
 ## Geometry

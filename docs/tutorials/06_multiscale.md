@@ -1,5 +1,9 @@
 # 6 · Multiscale: first-principles exchange → micromagnetic parameters
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ```bash
 magex params ../../validation_runs/CrI3_atomic_soc/results.json.gz --thickness 7.0
 ```

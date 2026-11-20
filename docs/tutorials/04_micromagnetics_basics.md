@@ -1,5 +1,9 @@
 # 4 · Micromagnetics: the first simulation (μMAG standard problem 4)
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 `magex micromag` is a finite-difference micromagnetic solver in the spirit of OOMMF and mumax³,
 written in NumPy/SciPy (multithreaded FFTs), with the same energy terms, units and file formats.
 

@@ -1,5 +1,9 @@
 # 16 · Performance: threads, MPI, GPU and restarts
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 | engine | parallelism |
 |--------|-------------|
 | `magex run`, `magex damping` | MPI over k-points (`mpirun -n 40 magex run ...`) |

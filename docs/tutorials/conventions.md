@@ -1,5 +1,9 @@
 # Conventions and units
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ## Atomistic spin Hamiltonian (magex / TB2J convention)
 
     E = Σ_i e_i·A_i·e_i  −  Σ_{i≠j} e_i·J_ij·e_j  −  μ_B Σ_i μ_i e_i·B

@@ -1,5 +1,9 @@
 # 11 · Energy barriers and lifetimes (GNEB)
 
+<!-- gs-watermark -->
+> **© 2026 Gokaran Shukla** · part of [magex](https://github.com/Gokaran-Shukla/magex) · MIT License — any reuse must keep this copyright notice and credit the author.
+
+
 ```bash
 magex gneb examples/spindyn/skyrmion_gneb.toml     # atomistic skyrmion collapse
 magex gneb examples/micromag/mram_barrier.toml     # thermal stability of an MRAM free layer
